@@ -129,6 +129,34 @@ WHERE commander_id = $1 AND goods_id = $2
 		if saveErr := orm.SaveDorm3dApartment(apartment); saveErr != nil {
 			response.Result = proto.Uint32(2)
 		}
+	case consts.DROP_TYPE_DORM3D_FURNITURE: // dorm3d furniture.
+		// Same story as gifts: furniture lives in the apartment record, not in
+		// commander_items. It is recorded unplaced (slot 0) until the player
+		// arranges it, which is what SC_28000.rooms[].furnitures carries.
+		apartment, apErr := orm.GetOrCreateDorm3dApartment(client.Commander.CommanderID)
+		if apErr != nil {
+			response.Result = proto.Uint32(2)
+			break
+		}
+		room := apartment.RoomByID(1)
+		if room == nil {
+			response.Result = proto.Uint32(2)
+			break
+		}
+		for i, furnitureID := range shopOffer.Effects {
+			bought := uint32(shopOffer.Number)
+			for n := uint32(0); n < bought; n++ {
+				room.Furnitures = append(room.Furnitures, orm.Dorm3dFurniture{FurnitureID: uint32(furnitureID)})
+			}
+			response.DropList[i] = &protobuf.DROPINFO{
+				Type:   proto.Uint32(shopOffer.Type),
+				Id:     proto.Uint32(uint32(furnitureID)),
+				Number: proto.Uint32(bought),
+			}
+		}
+		if saveErr := orm.SaveDorm3dApartment(apartment); saveErr != nil {
+			response.Result = proto.Uint32(2)
+		}
 	default:
 		response.Result = proto.Uint32(2)
 	}
