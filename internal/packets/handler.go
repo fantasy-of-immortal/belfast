@@ -36,6 +36,22 @@ func RegisterPacketHandler(packetId int, handlers []PacketHandler) {
 	PacketDecisionFn[packetId] = handlers
 }
 
+// dispatchHandlerSafely runs one packet handler and converts a panic into an
+// ordinary error. A nil deref in a single handler used to take down the whole
+// server process, dropping every connected client and leaving the game stuck on
+// a loading screen without any reply. Containing it here keeps the blast radius
+// to the one offending packet.
+func dispatchHandlerSafely(handler PacketHandler, buffer *[]byte, client *connection.Client, packetID int) (replyID int, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			replyID = packetID
+			err = fmt.Errorf("handler for CS_%d panicked: %v", packetID, recovered)
+		}
+	}()
+	_, replyID, err = handler(buffer, client)
+	return replyID, err
+}
+
 // Registers a localized packet handler, will call specific handler(s) based on
 // the server's region.
 func RegisterLocalizedPacketHandler(packetId int, localizedHandler LocalizedHandler) {
@@ -108,12 +124,12 @@ func Dispatch(buffer *[]byte, client *connection.Client, n int) {
 			debug.InsertPacket(packetId, &headerlessBuffer)
 			for _, handler := range handlers {
 				start := time.Now()
-				_, packetId, err := handler(&headerlessBuffer, client)
+				replyID, err := dispatchHandlerSafely(handler, &headerlessBuffer, client, packetId)
 				elapsed := time.Since(start)
-				logger.LogEvent("Metrics", "HandlerMs", fmt.Sprintf("CS_%d -> %s", packetId, elapsed), logger.LOG_LEVEL_DEBUG)
+				logger.LogEvent("Metrics", "HandlerMs", fmt.Sprintf("CS_%d -> %s", replyID, elapsed), logger.LOG_LEVEL_DEBUG)
 				if err != nil {
 					client.RecordHandlerError()
-					logger.LogEvent("Handler", "Error", fmt.Sprintf("SC_%d - %v", packetId, err), logger.LOG_LEVEL_ERROR)
+					logger.LogEvent("Handler", "Error", fmt.Sprintf("SC_%d - %v", replyID, err), logger.LOG_LEVEL_ERROR)
 					client.CloseWithError(err)
 					return
 				}

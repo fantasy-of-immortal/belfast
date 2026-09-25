@@ -310,9 +310,52 @@ func grantDorm3dLevelUpDropsTx(ctx context.Context, tx pgx.Tx, commander *orm.Co
 			if err := commander.AddResourceTx(ctx, tx, dropID, count); err != nil {
 				return nil, err
 			}
-		case consts.DROP_TYPE_ITEM:
+		case consts.DROP_TYPE_ITEM, consts.DROP_TYPE_ICON_FRAME:
 			if err := commander.AddItemTx(ctx, tx, dropID, count); err != nil {
 				return nil, err
+			}
+		case consts.DROP_TYPE_DORM3D_GIFT:
+			// Dorm3d gifts are not commander_items: the client counts them out of
+			// SC_28000.gifts[], so they must land in the apartment record.
+			// Level-up rewards use this type (e.g. dorm3d_favor 20220 lv2 grants
+			// [27, 1021001, 1]); returning an error here aborted the whole
+			// level-up, closed the connection and left the client retrying forever.
+			apartment, apErr := orm.GetOrCreateDorm3dApartmentTx(ctx, tx, commander.CommanderID)
+			if apErr != nil {
+				return nil, apErr
+			}
+			apartment.EnsureGiftEntry(dropID).Number += count
+			if saveErr := orm.SaveDorm3dApartmentTx(ctx, tx, apartment); saveErr != nil {
+				return nil, saveErr
+			}
+		case consts.DROP_TYPE_DORM3D_FURNITURE:
+			// Furniture belongs to a dorm room and is not placed anywhere yet:
+			// record it as an unplaced (slot 0) entry so it shows up in the
+			// apartment data the client receives.
+			apartment, apErr := orm.GetOrCreateDorm3dApartmentTx(ctx, tx, commander.CommanderID)
+			if apErr != nil {
+				return nil, apErr
+			}
+			if room := apartment.RoomByID(1); room != nil {
+				for i := uint32(0); i < count; i++ {
+					room.Furnitures = append(room.Furnitures, orm.Dorm3dFurniture{FurnitureID: dropID})
+				}
+				if saveErr := orm.SaveDorm3dApartmentTx(ctx, tx, apartment); saveErr != nil {
+					return nil, saveErr
+				}
+			}
+		case consts.DROP_TYPE_LIVINGAREA_COVER:
+			if _, coverErr := orm.GetCommanderLivingAreaCoverEntry(commander.CommanderID, dropID); coverErr != nil {
+				if !errors.Is(coverErr, db.ErrNotFound) {
+					return nil, coverErr
+				}
+				if upErr := orm.UpsertCommanderLivingAreaCover(orm.CommanderLivingAreaCover{
+					CommanderID: commander.CommanderID,
+					CoverID:     dropID,
+					IsNew:       true,
+				}); upErr != nil {
+					return nil, upErr
+				}
 			}
 		default:
 			return nil, fmt.Errorf("unsupported dorm3d reward type %d", dropType)
@@ -362,6 +405,47 @@ func loadDorm3dSetInt(key string) (uint32, error) {
 		return 0, err
 	}
 	return cfg.KeyValueInt, nil
+}
+
+// dorm3dStarterGiftCount is how many of each applicable gift a commander is
+// granted when the inventory is first seeded.
+const dorm3dStarterGiftCount = 3
+
+// SeedDorm3dGifts fills an empty gift inventory from ShareCfg/dorm3d_gift.json.
+//
+// The client refuses to send CS_28009 at all while its giftBag is empty
+// (apartmentgivegiftcommand.lua:7 -> getGiftCount -> apartmentproxy.lua:25-27,
+// whose only source is SC_28000.gifts), so an unseeded apartment can never give
+// a gift. Gift ids are read from the config table -- never guessed -- and are
+// limited to gifts usable by a ship the commander actually has in the dorm.
+func SeedDorm3dGifts(apartment *orm.Dorm3dApartment) (bool, error) {
+	if len(apartment.Gifts) > 0 || len(apartment.Ships) == 0 {
+		return false, nil
+	}
+	entries, err := orm.ListConfigEntries(dorm3dGiftCategory)
+	if err != nil {
+		return false, err
+	}
+	owned := make(map[uint32]bool, len(apartment.Ships))
+	for _, ship := range apartment.Ships {
+		owned[ship.ShipGroup] = true
+	}
+	seeded := false
+	for _, entry := range entries {
+		var cfg dorm3dGiftConfig
+		if err := json.Unmarshal(entry.Data, &cfg); err != nil || cfg.ID == 0 {
+			continue
+		}
+		// ShipGroupID == 0 marks a universal gift; otherwise it is restricted to
+		// that ship_group and the dorm must actually contain that ship.
+		if cfg.ShipGroupID != 0 && !owned[cfg.ShipGroupID] {
+			continue
+		}
+		gift := apartment.EnsureGiftEntry(cfg.ID)
+		gift.Number += dorm3dStarterGiftCount
+		seeded = true
+	}
+	return seeded, nil
 }
 
 func resolveDorm3dCharID(shipGroup uint32) (uint32, error) {

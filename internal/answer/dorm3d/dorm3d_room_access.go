@@ -33,9 +33,30 @@ type dorm3dCost struct {
 
 type dorm3dRoomConfig struct {
 	ID           uint32          `json:"id"`
+	Type         uint32          `json:"type"`
+	Character    []uint32        `json:"character"`
 	UnlockItem   json.RawMessage `json:"unlock_item"`
 	CharacterPay json.RawMessage `json:"character_pay"`
 	InviteCost   json.RawMessage `json:"invite_cost"`
+}
+
+// dorm3dSeedRoomShips returns the ship_groups a freshly unlocked room should
+// contain. ShareCfg/dorm3d_rooms.json lists them in `character`; for personal
+// rooms (type == 2) the first entry is the resident character and must be
+// present so the client's ApartmentRoom.unlockCharacter map is non-empty
+// (see apartmentroom.lua:3-12). Without this the room exists but shows no
+// character, the client reports "invalid operation" and loading never ends.
+func dorm3dSeedRoomShips(roomCfg *dorm3dRoomConfig) []uint32 {
+	ships := make([]uint32, 0, len(roomCfg.Character))
+	seen := make(map[uint32]bool, len(roomCfg.Character))
+	for _, shipGroup := range roomCfg.Character {
+		if shipGroup == 0 || seen[shipGroup] {
+			continue
+		}
+		seen[shipGroup] = true
+		ships = append(ships, shipGroup)
+	}
+	return ships
 }
 
 func SelectDorm3dEnter(buffer *[]byte, client *connection.Client) (int, int, error) {
@@ -66,7 +87,17 @@ func Dorm3dRoomUnlock(buffer *[]byte, client *connection.Client) (int, int, erro
 	if err != nil {
 		return sendDorm3dRoomUnlockFailure(client, apartment)
 	}
-	if apartment.RoomByID(roomID) != nil {
+	if existing := apartment.RoomByID(roomID); existing != nil {
+		// A room persisted before ships were seeded carries an empty ship list
+		// forever: the client then has no unlockable character, never completes
+		// loading, and its own "no room" check makes it re-send CS_28001 here.
+		// Backfill the missing ships (no cost) and report success so the client
+		// can proceed instead of looping on "invalid operation".
+		if len(existing.Ships) == 0 {
+			if backfilled, ok := dorm3dBackfillRoomShips(apartment, roomID, roomCfg); ok {
+				return sendDorm3dRoomUnlockSuccess(client, apartment, backfilled)
+			}
+		}
 		return sendDorm3dRoomUnlockFailure(client, apartment)
 	}
 
@@ -89,7 +120,7 @@ func Dorm3dRoomUnlock(buffer *[]byte, client *connection.Client) (int, int, erro
 			ID:          roomID,
 			Furnitures:  []orm.Dorm3dFurniture{},
 			Collections: []uint32{},
-			Ships:       []uint32{},
+			Ships:       dorm3dSeedRoomShips(roomCfg),
 		}
 		if !freshApartment.AddRoom(room) {
 			return fmt.Errorf("room already unlocked")
@@ -106,12 +137,7 @@ func Dorm3dRoomUnlock(buffer *[]byte, client *connection.Client) (int, int, erro
 		return sendDorm3dRoomUnlockFailure(client, apartment)
 	}
 
-	response := protobuf.SC_28002{
-		Result: proto.Uint32(dorm3dResultSuccess),
-		Room:   buildDorm3dRooms(orm.Dorm3dRoomList{room})[0],
-		Ins:    buildDorm3dIns(apartment.Ins),
-	}
-	return client.SendMessage(28002, &response)
+	return sendDorm3dRoomUnlockSuccess(client, apartment, room)
 }
 
 func Dorm3dReplaceFurniture(buffer *[]byte, client *connection.Client) (int, int, error) {
@@ -220,6 +246,48 @@ func Dorm3dRoomInviteUnlock(buffer *[]byte, client *connection.Client) (int, int
 	}
 
 	return sendDorm3dResultOnly(client, 28020, dorm3dResultSuccess)
+}
+
+// dorm3dBackfillRoomShips repairs a room that was persisted with an empty ship
+// list. It only ever adds ships, never removes them, and is a no-op returning
+// false when the room config yields nothing to add. Cost is not charged.
+func dorm3dBackfillRoomShips(apartment *orm.Dorm3dApartment, roomID uint32, roomCfg *dorm3dRoomConfig) (orm.Dorm3dRoom, bool) {
+	ships := dorm3dSeedRoomShips(roomCfg)
+	if len(ships) == 0 {
+		return orm.Dorm3dRoom{}, false
+	}
+	ctx := context.Background()
+	var updated orm.Dorm3dRoom
+	if err := orm.WithPGXTx(ctx, func(tx pgx.Tx) error {
+		freshApartment, txErr := orm.GetOrCreateDorm3dApartmentTx(ctx, tx, apartment.CommanderID)
+		if txErr != nil {
+			return txErr
+		}
+		freshRoom := freshApartment.RoomByID(roomID)
+		if freshRoom == nil || len(freshRoom.Ships) != 0 {
+			return errDorm3dRoomNoBackfill
+		}
+		freshRoom.Ships = ships
+		if txErr := orm.SaveDorm3dApartmentTx(ctx, tx, freshApartment); txErr != nil {
+			return txErr
+		}
+		updated = *freshRoom
+		return nil
+	}); err != nil {
+		return orm.Dorm3dRoom{}, false
+	}
+	return updated, true
+}
+
+var errDorm3dRoomNoBackfill = errors.New("dorm3d room does not need ship backfill")
+
+func sendDorm3dRoomUnlockSuccess(client *connection.Client, apartment *orm.Dorm3dApartment, room orm.Dorm3dRoom) (int, int, error) {
+	response := protobuf.SC_28002{
+		Result: proto.Uint32(dorm3dResultSuccess),
+		Room:   buildDorm3dRooms(orm.Dorm3dRoomList{room})[0],
+		Ins:    buildDorm3dIns(apartment.Ins),
+	}
+	return client.SendMessage(28002, &response)
 }
 
 func sendDorm3dRoomUnlockFailure(client *connection.Client, apartment *orm.Dorm3dApartment) (int, int, error) {

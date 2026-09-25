@@ -17,6 +17,14 @@ func Dorm3dApartmentData(buffer *[]byte, client *connection.Client) (int, int, e
 	if err != nil {
 		return 0, 28000, err
 	}
+	// Seed the gift inventory once; without it the client never sends CS_28009.
+	if seeded, seedErr := SeedDorm3dGifts(apartment); seedErr != nil {
+		return 0, 28000, seedErr
+	} else if seeded {
+		if saveErr := orm.SaveDorm3dApartment(apartment); saveErr != nil {
+			return 0, 28000, saveErr
+		}
+	}
 	response := protobuf.SC_28000{
 		Gifts:              buildDorm3dGifts(apartment.Gifts),
 		Ships:              buildDorm3dShips(apartment.Ships),

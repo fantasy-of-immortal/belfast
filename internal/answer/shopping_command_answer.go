@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ggmolly/belfast/internal/connection"
+	"github.com/ggmolly/belfast/internal/consts"
 	"github.com/ggmolly/belfast/internal/db"
 	"github.com/ggmolly/belfast/internal/logger"
 	"github.com/ggmolly/belfast/internal/orm"
@@ -34,6 +35,13 @@ func HandleShopPurchase(buffer *[]byte, client *connection.Client) (int, int, er
 	err := proto.Unmarshal(*buffer, &boughtOffer)
 	if err != nil {
 		return 0, 16002, err
+	}
+	// A purchase can arrive before the commander finished loading (e.g. while the
+	// session is re-authenticating). Without this guard the deref below panics,
+	// which kills the whole server process instead of answering the client.
+	if client.Commander == nil {
+		response := protobuf.SC_16002{Result: proto.Uint32(1)}
+		return client.SendMessage(16002, &response)
 	}
 
 	shopOffer, err := loadShopOfferByID(boughtOffer.GetId())
@@ -101,6 +109,26 @@ WHERE commander_id = $1 AND goods_id = $2
 	case 12: // operation siren, to implement
 	case 20:
 		response.Result = proto.Uint32(3)
+	case consts.DROP_TYPE_DORM3D_GIFT: // dorm3d gifts.
+		// These are not commander_items: the client counts them out of
+		// SC_28000.gifts[], so they have to land in the apartment record.
+		apartment, apErr := orm.GetOrCreateDorm3dApartment(client.Commander.CommanderID)
+		if apErr != nil {
+			response.Result = proto.Uint32(2)
+			break
+		}
+		for i, giftID := range shopOffer.Effects {
+			gift := apartment.EnsureGiftEntry(uint32(giftID))
+			gift.Number += uint32(shopOffer.Number)
+			response.DropList[i] = &protobuf.DROPINFO{
+				Type:   proto.Uint32(shopOffer.Type),
+				Id:     proto.Uint32(uint32(giftID)),
+				Number: proto.Uint32(uint32(shopOffer.Number)),
+			}
+		}
+		if saveErr := orm.SaveDorm3dApartment(apartment); saveErr != nil {
+			response.Result = proto.Uint32(2)
+		}
 	default:
 		response.Result = proto.Uint32(2)
 	}

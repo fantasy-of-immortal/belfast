@@ -957,6 +957,16 @@ func (apartment *Dorm3dApartment) FindGift(giftID uint32) *Dorm3dGift {
 	return nil
 }
 
+// EnsureGiftEntry returns the inventory slot for giftID, creating it when the
+// commander does not own that gift yet.
+func (apartment *Dorm3dApartment) EnsureGiftEntry(giftID uint32) *Dorm3dGift {
+	if gift := apartment.FindGift(giftID); gift != nil {
+		return gift
+	}
+	apartment.Gifts = append(apartment.Gifts, Dorm3dGift{GiftID: giftID})
+	return &apartment.Gifts[len(apartment.Gifts)-1]
+}
+
 func (apartment *Dorm3dApartment) findShip(shipGroup uint32) (*Dorm3dShip, bool) {
 	for i := range apartment.Ships {
 		if apartment.Ships[i].ShipGroup == shipGroup {
