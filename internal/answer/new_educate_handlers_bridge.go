@@ -94,6 +94,46 @@ func NewEducateGetExtraDrop(buffer *[]byte, client *connection.Client) (int, int
 	return neweducate.NewEducateGetExtraDrop(buffer, client)
 }
 
+func NewEducateEnterAssess(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateEnterAssess(buffer, client)
+}
+
+func NewEducateGetChoose(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateGetChoose(buffer, client)
+}
+
+func NewEducateRequestChoices(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateRequestChoices(buffer, client)
+}
+
+func NewEducateRefreshChoice(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateRefreshChoice(buffer, client)
+}
+
+func NewEducateMakeChoice(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateMakeChoice(buffer, client)
+}
+
+func NewEducateGiveUpChoice(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateGiveUpChoice(buffer, client)
+}
+
+func NewEducateReplaceTarot(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateReplaceTarot(buffer, client)
+}
+
+func NewEducateUpgradeEntry(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateUpgradeEntry(buffer, client)
+}
+
+func NewEducateGiveUpEntryUp(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateGiveUpEntryUp(buffer, client)
+}
+
+func NewEducateRefreshShop(buffer *[]byte, client *connection.Client) (int, int, error) {
+	return neweducate.NewEducateRefreshShop(buffer, client)
+}
+
 func NewEducateGetMap(buffer *[]byte, client *connection.Client) (int, int, error) {
 	return neweducate.NewEducateGetMap(buffer, client)
 }

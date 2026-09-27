@@ -29,6 +29,7 @@ func defaultEducateState(commanderID uint32, tbID uint32) *educateState {
 	info := ensureTBInfoDefaults(tbInfoPlaceholder())
 	permanent := ensureTBPermanentDefaults(tbPermanentPlaceholder())
 	info.Id = proto.Uint32(tbID)
+	seedNewEducateDefaultRes(info, tbID)
 	return &educateState{
 		Entry:     &orm.CommanderTB{CommanderID: commanderID},
 		Info:      info,

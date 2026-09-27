@@ -69,6 +69,14 @@ func registerPackets() {
 		answer.WeeklyMissions,
 		answer.ActivityTaskStateSync,
 		answer.DormData,
+		// SC_28000 (宿舍计划 / Dorm3D). The client never sends CS_28000 - it only builds
+		// ApartmentProxy.roomData from the SC_28000 payload that arrives here
+		// (model/proxy/apartmentproxy.lua:22-38). Without it roomData stays empty,
+		// SelectDorm3DScene renders every room as locked
+		// (view/dorm3d/selectdorm3dscene.lua:190 -> getRoom(id) is nil -> "lock"),
+		// and the unlock button's CS_28001 gets rejected because the server already
+		// considers the room unlocked - which the client surfaces as "无效操作".
+		answer.Dorm3dApartmentData,
 		answer.FleetEnergyRecoverTime,
 		answer.GameMailbox,
 		answer.CompensateNotification,
@@ -336,6 +344,16 @@ func registerPackets() {
 	packets.RegisterPacketHandler(29044, []packets.PacketHandler{answer.NewEducateUpgradePlan})
 	packets.RegisterPacketHandler(29046, []packets.PacketHandler{answer.NewEducateScheduleSkip})
 	packets.RegisterPacketHandler(29048, []packets.PacketHandler{answer.NewEducateGetExtraDrop})
+	packets.RegisterPacketHandler(29050, []packets.PacketHandler{answer.NewEducateEnterAssess})
+	packets.RegisterPacketHandler(29072, []packets.PacketHandler{answer.NewEducateRefreshShop})
+	packets.RegisterPacketHandler(29101, []packets.PacketHandler{answer.NewEducateGiveUpChoice})
+	packets.RegisterPacketHandler(29103, []packets.PacketHandler{answer.NewEducateMakeChoice})
+	packets.RegisterPacketHandler(29105, []packets.PacketHandler{answer.NewEducateRefreshChoice})
+	packets.RegisterPacketHandler(29107, []packets.PacketHandler{answer.NewEducateRequestChoices})
+	packets.RegisterPacketHandler(29120, []packets.PacketHandler{answer.NewEducateReplaceTarot})
+	packets.RegisterPacketHandler(29122, []packets.PacketHandler{answer.NewEducateUpgradeEntry})
+	packets.RegisterPacketHandler(29124, []packets.PacketHandler{answer.NewEducateGiveUpEntryUp})
+	packets.RegisterPacketHandler(29126, []packets.PacketHandler{answer.NewEducateGetChoose})
 	packets.RegisterPacketHandler(29060, []packets.PacketHandler{answer.NewEducateGetMap})
 	packets.RegisterPacketHandler(29062, []packets.PacketHandler{answer.NewEducateMapNormal})
 	packets.RegisterPacketHandler(29064, []packets.PacketHandler{answer.NewEducateMapEvent})

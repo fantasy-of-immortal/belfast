@@ -53,6 +53,7 @@ func loadEducateState(client *connection.Client, tbID uint32) (*educateState, er
 	info = ensureTBInfoDefaults(info)
 	permanent = ensureTBPermanentDefaults(permanent)
 	info.Id = proto.Uint32(tbID)
+	seedNewEducateDefaultRes(info, tbID)
 	return &educateState{Entry: entry, Info: info, Permanent: permanent}, nil
 }
 

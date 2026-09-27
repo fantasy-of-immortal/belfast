@@ -61,6 +61,7 @@ func NewEducateReset(buffer *[]byte, client *connection.Client) (int, int, error
 	state.Info = ensureTBInfoDefaults(tbInfoPlaceholder())
 	state.Info.Id = proto.Uint32(payload.GetId())
 	state.Info.Difficulty = proto.Uint32(payload.GetDifficulty())
+	seedNewEducateDefaultRes(state.Info, payload.GetId())
 	state.Permanent.NgPlusCount = proto.Uint32(state.Permanent.GetNgPlusCount() + 1)
 	response := protobuf.SC_29008{
 		Result: proto.Uint32(0),
@@ -181,6 +182,30 @@ func NewEducateSelectTopic(buffer *[]byte, client *connection.Client) (int, int,
 	return client.SendMessage(29018, &response)
 }
 
+// NewEducateEnterAssess handles CS_29050 (enter assess phase). The client
+// sends this when the assess screen opens; without a handler it triggers the
+// CS_10998 6-second retry storm (same failure mode as backyard CS_19026).
+func NewEducateEnterAssess(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29050
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29051, err
+	}
+	state, err := loadEducateState(client, payload.GetId())
+	if err != nil {
+		return 0, 29051, err
+	}
+	state.Info.Fsm.SystemNo = proto.Uint32(newEducateSystemAssess)
+	state.Info.Fsm.CurrentNode = proto.Uint32(0)
+	response := protobuf.SC_29051{
+		Result: proto.Uint32(0),
+		Drop:   emptyTBDrops(),
+	}
+	if err := saveEducateState(state); err != nil {
+		return 0, 29051, err
+	}
+	return client.SendMessage(29051, &response)
+}
+
 func NewEducateGetTalents(buffer *[]byte, client *connection.Client) (int, int, error) {
 	var payload protobuf.CS_29019
 	if err := proto.Unmarshal(*buffer, &payload); err != nil {
@@ -213,6 +238,148 @@ func NewEducateGetTalents(buffer *[]byte, client *connection.Client) (int, int, 
 		return 0, 29020, err
 	}
 	return client.SendMessage(29020, &response)
+}
+
+// 29101-29127 priority-choice handlers. The client manages its FSM locally
+// from these replies; handlers that do not mutate server state simply answer
+// Result=0 (see deep/09-status.md T2 records). Missing handlers here cause the
+// 6-second SC_10998 retry storm (backyard CS_19026 failure mode).
+
+func newEducateNin1Cache(cache *protobuf.TBFSMCACHE) *protobuf.TBFSMCACHENIN1 {
+	if len(cache.CacheNin1) > 0 {
+		return cache.CacheNin1[0]
+	}
+	return &protobuf.TBFSMCACHENIN1{IsFromShop: proto.Uint32(0)}
+}
+
+func NewEducateGetChoose(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29126
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29127, err
+	}
+	state, err := loadEducateState(client, payload.GetId())
+	if err != nil {
+		return 0, 29127, err
+	}
+	ensureEducateCache(state.Info)
+	response := protobuf.SC_29127{
+		Result: proto.Uint32(0),
+		Fsm:    state.Info.Fsm,
+	}
+	if err := saveEducateState(state); err != nil {
+		return 0, 29127, err
+	}
+	return client.SendMessage(29127, &response)
+}
+
+func NewEducateRequestChoices(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29107
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29108, err
+	}
+	state, err := loadEducateState(client, payload.GetId())
+	if err != nil {
+		return 0, 29108, err
+	}
+	response := protobuf.SC_29108{
+		Result: proto.Uint32(0),
+		Cache:  newEducateNin1Cache(ensureEducateCache(state.Info)),
+	}
+	return client.SendMessage(29108, &response)
+}
+
+func NewEducateRefreshChoice(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29105
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29106, err
+	}
+	state, err := loadEducateState(client, payload.GetId())
+	if err != nil {
+		return 0, 29106, err
+	}
+	response := protobuf.SC_29106{
+		Result: proto.Uint32(0),
+		Cache:  newEducateNin1Cache(ensureEducateCache(state.Info)),
+	}
+	return client.SendMessage(29106, &response)
+}
+
+func NewEducateMakeChoice(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29103
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29104, err
+	}
+	response := protobuf.SC_29104{
+		Result: proto.Uint32(0),
+		Drop:   emptyTBDrops(),
+	}
+	return client.SendMessage(29104, &response)
+}
+
+func NewEducateGiveUpChoice(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29101
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29102, err
+	}
+	response := protobuf.SC_29102{
+		Result: proto.Uint32(0),
+		Drop:   emptyTBDrops(),
+	}
+	return client.SendMessage(29102, &response)
+}
+
+func NewEducateReplaceTarot(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29120
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29121, err
+	}
+	state, err := loadEducateState(client, payload.GetId())
+	if err != nil {
+		return 0, 29121, err
+	}
+	ensureEducateCache(state.Info)
+	state.Info.Fsm.TarotSelects = appendUniqueUint32(state.Info.Fsm.TarotSelects, payload.GetTarotId())
+	response := protobuf.SC_29121{
+		Result: proto.Uint32(0),
+		Drop:   emptyTBDrops(),
+	}
+	if err := saveEducateState(state); err != nil {
+		return 0, 29121, err
+	}
+	return client.SendMessage(29121, &response)
+}
+
+func NewEducateUpgradeEntry(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29122
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29123, err
+	}
+	response := protobuf.SC_29123{
+		Result: proto.Uint32(0),
+		Drop:   emptyTBDrops(),
+	}
+	return client.SendMessage(29123, &response)
+}
+
+func NewEducateGiveUpEntryUp(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29124
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29125, err
+	}
+	response := protobuf.SC_29125{Result: proto.Uint32(0)}
+	return client.SendMessage(29125, &response)
+}
+
+func NewEducateRefreshShop(buffer *[]byte, client *connection.Client) (int, int, error) {
+	var payload protobuf.CS_29072
+	if err := proto.Unmarshal(*buffer, &payload); err != nil {
+		return 0, 29073, err
+	}
+	response := protobuf.SC_29073{
+		Result: proto.Uint32(0),
+		Shops:  []uint32{},
+	}
+	return client.SendMessage(29073, &response)
 }
 
 func NewEducateRefreshTalent(buffer *[]byte, client *connection.Client) (int, int, error) {
