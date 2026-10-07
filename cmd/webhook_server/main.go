@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 )
 
 const repoPath = "/home/molly/Documents/belfast"
@@ -87,7 +86,7 @@ func (runner *jobRunner) runCommand(ctx context.Context, cmdArgs []string, label
 	}
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	cmd.Dir = repoPath
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureProcessGroup(cmd)
 
 	env := os.Environ()
 	if os.Getenv("WEBHOOK_SSH_KEY") != "" && cmdArgs[0] == "git" {
@@ -145,13 +144,6 @@ func (runner *jobRunner) runCommand(ctx context.Context, cmdArgs []string, label
 	}
 
 	return nil
-}
-
-func terminateProcessGroup(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 }
 
 type webhookHandler struct {
