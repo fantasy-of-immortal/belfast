@@ -33,6 +33,10 @@ func InitDatabase() bool {
 			dsn = strings.TrimSpace(os.Getenv("TEST_DATABASE_DSN"))
 		}
 		if dsn == "" {
+			if strings.EqualFold(strings.TrimSpace(os.Getenv("MODE")), "test") {
+				initErr = fmt.Errorf("tests require an explicit dedicated database DSN; server.toml fallback is disabled")
+				return
+			}
 			cfg, cfgErr := loadServerConfig()
 			if cfgErr != nil {
 				initErr = fmt.Errorf("missing Postgres DSN from env or server.toml: %w", cfgErr)
