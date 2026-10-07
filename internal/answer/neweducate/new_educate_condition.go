@@ -119,8 +119,14 @@ func evaluateEducateConditionConfig(state *educateState, c *educateConditionConf
 		}
 		switch kind {
 		case 1:
+			if err := validateEducateConditionNumericOwner(state, newEducateAttrCategory, id); err != nil {
+				return false, err
+			}
 			value = educateKVCount(state.Info.Res.Attrs, id)
 		case 2:
+			if err := validateEducateConditionNumericOwner(state, newEducateResourceCategory, id); err != nil {
+				return false, err
+			}
 			value = educateKVCount(state.Info.Res.Resource, id)
 		case 4:
 			for _, buff := range state.Info.Benefit.GetActives() {
@@ -189,4 +195,21 @@ func evaluateEducateConditionConfig(state *educateState, c *educateConditionConf
 		return false, fmt.Errorf("unsupported condition type %d; server semantics need evidence", c.Type)
 	}
 	return educateCompare(value, op, threshold)
+}
+
+// Compatibility saves may retain fields from another character. The client
+// receives only the current character's numeric fields; gates must enforce the
+// same ownership contract before consulting those retained values.
+func validateEducateConditionNumericOwner(state *educateState, category string, id uint32) error {
+	config, found, err := loadNewEducateConfigByID[educateNumericConfig](category, id)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%s/%d: missing condition numeric configuration", category, id)
+	}
+	if config.Character != state.Info.GetId() {
+		return fmt.Errorf("%s/%d: condition belongs to character %d, current character %d", category, id, config.Character, state.Info.GetId())
+	}
+	return nil
 }
