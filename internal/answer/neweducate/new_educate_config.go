@@ -2,6 +2,8 @@ package neweducate
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/ggmolly/belfast/internal/db"
@@ -18,6 +20,8 @@ const (
 	newEducateShopCategory           = "ShareCfg/child2_shop.json"
 	newEducateResourceCategory       = "ShareCfg/child2_resource.json"
 	newEducateAttrCategory           = "ShareCfg/child2_attr.json"
+	newEducatePlanCategory           = "ShareCfg/child2_plan.json"
+	newEducateNodeCategory           = "ShareCfg/child2_node.json"
 
 	newEducateDropTypeAttr = 1
 	newEducateDropTypeRes  = 2
@@ -34,11 +38,21 @@ type newEducateRoundConfig struct {
 	BenefitSelect json.RawMessage `json:"benefit_select"`
 	MapMobility   uint32          `json:"map_mobility"`
 	RefreshRefill uint32          `json:"refresh_refill"`
+	TargetID      uint32          `json:"target_id"`
+	PlanNum       uint32          `json:"plan_num"`
+	PlanGroup     []uint32        `json:"plan_group"`
+	MainEventNode json.RawMessage `json:"main_event_node_id"`
+	MainChatNode  json.RawMessage `json:"main_event_chat_node_id"`
 }
 
 type newEducateSiteNormalConfig struct {
-	ID   uint32    `json:"id"`
-	Cost [][]int32 `json:"cost"`
+	ID        uint32    `json:"id"`
+	Character uint32    `json:"character"`
+	Type      uint32    `json:"type"`
+	Level     uint32    `json:"site_lv"`
+	Node      uint32    `json:"node_id"`
+	Cost      []int32   `json:"cost"`
+	Drops     [][]int32 `json:"drop_display"`
 }
 
 type newEducateSiteEventGroupConfig struct {
@@ -57,6 +71,10 @@ type newEducateShopConfig struct {
 	ID           uint32 `json:"id"`
 	ResourceType uint32 `json:"resource_type"`
 	ResourceNum  uint32 `json:"resource_num"`
+	GoodsType    uint32 `json:"goods_type"`
+	GoodsID      uint32 `json:"goods_id"`
+	GoodsNum     uint32 `json:"goods_num"`
+	LimitNum     int32  `json:"limit_num"`
 }
 
 type newEducateResourceConfig struct {
@@ -73,32 +91,87 @@ type newEducateAttrConfig struct {
 	DefaultValue uint32 `json:"default_value"`
 }
 
+// child2_plan: one scheduled activity per round. result_node is the first
+// node of the course's playback chain; result_display holds the gain applied
+// when the chain reaches its end node (drop_type_client 1, node type 102).
+type newEducatePlanConfig struct {
+	ID             uint32          `json:"id"`
+	ResultNode     uint32          `json:"result_node"`
+	Cost           json.RawMessage `json:"cost"`
+	ResultDisplay  json.RawMessage `json:"result_display"`
+	GroupID        uint32          `json:"group_id"`
+	Level          uint32          `json:"level"`
+	LevelCondition json.RawMessage `json:"level_condition"`
+}
+
+// child2_node: one step of the playback chain. "next" may be a number, a
+// number-as-string, an array of ids, or an array of [node, weight] pairs.
+type newEducateNodeConfig struct {
+	ID              uint32          `json:"id"`
+	Type            uint32          `json:"type"`
+	NextType        uint32          `json:"next_type"`
+	Next            json.RawMessage `json:"next"`
+	DropTypeClient  uint32          `json:"drop_type_client"`
+	OptionCondition json.RawMessage `json:"option_condition"`
+	OptionCost      json.RawMessage `json:"option_cost"`
+}
+
 // seedNewEducateDefaultRes fills Res.Attrs / Res.Resource with the per-character
 // default values from child2_attr / child2_resource. Without the personality
 // attr (child2_attr type 2) the client crashes in NewEducateChar
 // GetPersonalityTag with "attempt to compare number with nil" (07-status finding).
-func seedNewEducateDefaultRes(info *protobuf.TBINFO, charID uint32) {
+func seedNewEducateDefaultRes(info *protobuf.TBINFO, charID uint32) error {
 	if info.Res == nil {
 		info.Res = &protobuf.TBRES{}
 	}
-	if len(info.Res.Attrs) == 0 {
-		if attrs, err := listNewEducateConfigs[newEducateAttrConfig](newEducateAttrCategory); err == nil {
-			for _, attr := range attrs {
-				if attr.Character == charID {
-					info.Res.Attrs = append(info.Res.Attrs, &protobuf.KVDATA{Key: proto.Uint32(attr.ID), Value: proto.Uint32(attr.DefaultValue)})
-				}
+	attrs, err := listNewEducateConfigs[newEducateAttrConfig](newEducateAttrCategory)
+	if err != nil {
+		return fmt.Errorf("character %d attribute configuration: %w", charID, err)
+	}
+	resources, err := listNewEducateConfigs[newEducateResourceConfig](newEducateResourceCategory)
+	if err != nil {
+		return fmt.Errorf("character %d resource configuration: %w", charID, err)
+	}
+	attrCount, resCount := 0, 0
+	{
+		for _, attr := range attrs {
+			if attr.Character == charID {
+				attrCount++
+				info.Res.Attrs = appendMissingNewEducateValue(info.Res.Attrs, attr.ID, attr.DefaultValue)
 			}
 		}
 	}
-	if len(info.Res.Resource) == 0 {
-		if resources, err := listNewEducateConfigs[newEducateResourceConfig](newEducateResourceCategory); err == nil {
-			for _, resource := range resources {
-				if resource.Character == charID {
-					info.Res.Resource = append(info.Res.Resource, &protobuf.KVDATA{Key: proto.Uint32(resource.ID), Value: proto.Uint32(resource.DefaultValue)})
-				}
+	{
+		for _, resource := range resources {
+			if resource.Character == charID {
+				resCount++
+				info.Res.Resource = appendMissingNewEducateValue(info.Res.Resource, resource.ID, resource.DefaultValue)
 			}
 		}
 	}
+	if attrCount == 0 || resCount == 0 {
+		return fmt.Errorf("character %d has incomplete attr/resource configuration", charID)
+	}
+	return nil
+}
+
+func appendMissingNewEducateValue(values []*protobuf.KVDATA, id, value uint32) []*protobuf.KVDATA {
+	for _, existing := range values {
+		if existing.GetKey() == id {
+			return values
+		}
+	}
+	return append(values, &protobuf.KVDATA{Key: proto.Uint32(id), Value: proto.Uint32(value)})
+}
+
+func filterNewEducateValues(values []*protobuf.KVDATA, allowed map[uint32]bool) []*protobuf.KVDATA {
+	out := make([]*protobuf.KVDATA, 0, len(values))
+	for _, value := range values {
+		if allowed[value.GetKey()] {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func loadNewEducateConfigByID[T any](category string, id uint32) (*T, bool, error) {
@@ -110,9 +183,19 @@ func loadNewEducateConfigByID[T any](category string, id uint32) (*T, bool, erro
 		return nil, false, err
 	}
 
+	data, err := normalizeEducateConfigIdentity(entry.Data)
+	if err != nil {
+		return nil, false, fmt.Errorf("%s/%s: %w", category, entry.Key, err)
+	}
 	var configData T
-	if err := json.Unmarshal(entry.Data, &configData); err != nil {
-		return nil, false, err
+	if err := json.Unmarshal(data, &configData); err != nil {
+		return nil, false, fmt.Errorf("%s/%s: %w", category, entry.Key, err)
+	}
+	var identity struct {
+		ID uint32 `json:"id"`
+	}
+	if err := json.Unmarshal(data, &identity); err != nil || identity.ID != id {
+		return nil, false, fmt.Errorf("%s/%s: id does not match key", category, entry.Key)
 	}
 
 	return &configData, true, nil
@@ -126,14 +209,46 @@ func listNewEducateConfigs[T any](category string) ([]T, error) {
 
 	configs := make([]T, 0, len(entries))
 	for _, entry := range entries {
+		data, err := normalizeEducateConfigIdentity(entry.Data)
+		if err != nil {
+			return nil, fmt.Errorf("%s/%s: %w", category, entry.Key, err)
+		}
 		var configData T
-		if err := json.Unmarshal(entry.Data, &configData); err != nil {
-			return nil, err
+		if err := json.Unmarshal(data, &configData); err != nil {
+			return nil, fmt.Errorf("%s/%s: %w", category, entry.Key, err)
+		}
+		var identity struct {
+			ID uint32 `json:"id"`
+		}
+		key, keyErr := strconv.ParseUint(entry.Key, 10, 32)
+		if err := json.Unmarshal(data, &identity); err != nil || keyErr != nil || key == 0 || uint32(key) != identity.ID {
+			return nil, fmt.Errorf("%s/%s: id does not match positive numeric key", category, entry.Key)
 		}
 		configs = append(configs, configData)
 	}
 
 	return configs, nil
+}
+
+// Some imported CSV-derived configurations preserve a BOM on the first
+// column name. Accept that known alias without modifying the evidence rows.
+func normalizeEducateConfigIdentity(data json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, fmt.Errorf("configuration must be an object")
+	}
+	if bom, ok := fields["\ufeffid"]; ok {
+		if ordinary, exists := fields["id"]; exists && string(ordinary) != string(bom) {
+			return nil, fmt.Errorf("conflicting id and BOM id")
+		}
+		fields["id"] = bom
+		delete(fields, "\ufeffid")
+		return json.Marshal(fields)
+	}
+	return data, nil
 }
 
 func loadCurrentNewEducateRoundConfig(info *protobuf.TBINFO) (*newEducateRoundConfig, bool, error) {
@@ -142,14 +257,49 @@ func loadCurrentNewEducateRoundConfig(info *protobuf.TBINFO) (*newEducateRoundCo
 		return nil, false, err
 	}
 
+	normal := map[uint32]newEducateRoundConfig{}
+	cycles := []newEducateRoundConfig{}
+	ids := map[uint32]bool{}
 	for _, round := range rounds {
-		if round.Character == info.GetId() && round.Round == info.GetRound().GetRound() && round.IsHardMode == info.GetDifficulty() && round.RoundType == newEducateRoundTypeNormal {
-			candidate := round
-			return &candidate, true, nil
+		if round.Character != info.GetId() || round.IsHardMode != info.GetDifficulty() {
+			continue
+		}
+		if round.ID == 0 || round.Round == 0 || ids[round.ID] {
+			return nil, false, fmt.Errorf("%s/%d: invalid/duplicate id or round", newEducateRoundCategory, round.ID)
+		}
+		ids[round.ID] = true
+		switch round.RoundType {
+		case newEducateRoundTypeNormal:
+			if _, duplicate := normal[round.Round]; duplicate {
+				return nil, false, fmt.Errorf("%s: character %d difficulty %d duplicate round %d", newEducateRoundCategory, info.GetId(), info.GetDifficulty(), round.Round)
+			}
+			normal[round.Round] = round
+		case 2:
+			cycles = append(cycles, round)
+		default:
+			return nil, false, fmt.Errorf("%s/%d: unknown round_type %d", newEducateRoundCategory, round.ID, round.RoundType)
 		}
 	}
-
-	return nil, false, nil
+	for i := 1; i <= len(normal); i++ {
+		if _, ok := normal[uint32(i)]; !ok {
+			return nil, false, fmt.Errorf("character %d difficulty %d missing round %d", info.GetId(), info.GetDifficulty(), i)
+		}
+	}
+	current := info.Round.GetRound()
+	if current == 0 || len(normal) == 0 {
+		return nil, false, fmt.Errorf("character %d difficulty %d has no valid timeline", info.GetId(), info.GetDifficulty())
+	}
+	if round, ok := normal[current]; ok {
+		return &round, true, nil
+	}
+	if current > uint32(len(normal)) && len(cycles) > 0 {
+		sort.Slice(cycles, func(i, j int) bool { return cycles[i].ID < cycles[j].ID })
+		// NewEducateRound.InitEndlessRoundId cycles sorted configuration IDs.
+		wave := current - uint32(len(normal))
+		round := cycles[(wave-1)%uint32(len(cycles))]
+		return &round, true, nil
+	}
+	return nil, false, fmt.Errorf("character %d difficulty %d round %d has no configuration", info.GetId(), info.GetDifficulty(), current)
 }
 
 func parseNewEducateUint32List(raw json.RawMessage) ([]uint32, error) {
@@ -165,89 +315,25 @@ func parseNewEducateUint32List(raw json.RawMessage) ([]uint32, error) {
 	return values, nil
 }
 
-func chooseNewEducateTalentCandidate(current []uint32, refreshed []uint32, available []uint32, oldTalent uint32) uint32 {
-	blocked := make(map[uint32]bool, len(current)+len(refreshed))
-	for _, value := range current {
-		blocked[value] = true
-	}
-	for _, value := range refreshed {
-		blocked[value] = true
-	}
-
-	for _, candidate := range available {
-		if candidate != oldTalent && !blocked[candidate] {
-			return candidate
-		}
-	}
-
-	return oldTalent
-}
-
-func applyNewEducateConfigDrops(state *educateState, drops [][]int32, multiplier uint32) {
-	if multiplier == 0 {
-		return
-	}
-
-	for _, drop := range drops {
-		if len(drop) < 3 {
-			continue
-		}
-
-		delta := -drop[2] * int32(multiplier)
-		switch uint32(drop[0]) {
-		case newEducateDropTypeAttr:
-			state.Info.Res.Attrs = upsertKVDATAWithDelta(state.Info.Res.Attrs, uint32(drop[1]), delta)
-		case newEducateDropTypeRes:
-			state.Info.Res.Resource = upsertKVDATAWithDelta(state.Info.Res.Resource, uint32(drop[1]), delta)
-		}
-	}
-}
-
-func upsertKVDATAWithDelta(values []*protobuf.KVDATA, key uint32, delta int32) []*protobuf.KVDATA {
-	for _, entry := range values {
-		if entry.GetKey() == key {
-			entry.Value = proto.Uint32(applyUint32Delta(entry.GetValue(), delta))
-			return values
-		}
-	}
-
-	return append(values, &protobuf.KVDATA{Key: proto.Uint32(key), Value: proto.Uint32(applyUint32Delta(0, delta))})
-}
-
-func applyUint32Delta(current uint32, delta int32) uint32 {
-	if delta >= 0 {
-		return current + uint32(delta)
-	}
-	if uint32(-delta) >= current {
-		return 0
-	}
-	return current - uint32(-delta)
-}
-
 func resolveNewEducateResourceID(state *educateState, resourceType uint32) (uint32, bool, error) {
 	resources, err := listNewEducateConfigs[newEducateResourceConfig](newEducateResourceCategory)
 	if err != nil {
 		return 0, false, err
 	}
 
+	var foundID uint32
 	for _, resource := range resources {
-		if resource.Type != resourceType {
-			continue
-		}
-		for _, entry := range state.Info.Res.Resource {
-			if entry.GetKey() == resource.ID {
-				return resource.ID, true, nil
+		if resource.Type == resourceType && resource.Character == state.Info.GetId() {
+			if foundID != 0 {
+				return 0, false, fmt.Errorf("character %d duplicate resource type %d", state.Info.GetId(), resourceType)
 			}
+			foundID = resource.ID
 		}
 	}
-
-	for _, resource := range resources {
-		if resource.Type == resourceType {
-			return resource.ID, true, nil
-		}
+	if foundID == 0 {
+		return 0, false, fmt.Errorf("character %d missing resource type %d", state.Info.GetId(), resourceType)
 	}
-
-	return 0, false, nil
+	return foundID, true, nil
 }
 
 func removeUint32(values []uint32, target uint32) []uint32 {
@@ -258,4 +344,40 @@ func removeUint32(values []uint32, target uint32) []uint32 {
 		}
 	}
 	return filtered
+}
+
+// parseChild2NodeNext resolves a child2_node "next" field to the follow-up
+// node id. Shapes observed in the 9.7.393 dump:
+//
+//	`"3629107"` (string number)  |  3629206 (number)
+//	[3629204,3629207]            (branch list -> take first, deterministic)
+//	[[0,50],[3700807,50]]        (weighted pairs -> take first pair's node)
+func parseNewEducateDropTriplets(raw json.RawMessage) [][]int32 {
+	if len(raw) == 0 {
+		return nil
+	}
+	var triplets [][]int32
+	if err := json.Unmarshal(raw, &triplets); err != nil {
+		return nil
+	}
+	return triplets
+}
+
+func parseEducateFixedNodeNext(raw json.RawMessage) (uint32, error) {
+	var number uint32
+	if err := json.Unmarshal(raw, &number); err == nil && string(raw) != "null" {
+		return number, nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return 0, fmt.Errorf("fixed successor must be uint32 or numeric string")
+	}
+	if value == "" {
+		return 0, nil
+	} // Configured terminal marker, not a parse failure.
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(parsed), nil
 }

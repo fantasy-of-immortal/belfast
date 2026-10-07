@@ -31,6 +31,9 @@ func setupConfigTest(t *testing.T) *connection.Client {
 		t.Fatalf("failed to seed commander: %v", err)
 	}
 	client := &connection.Client{Commander: &orm.Commander{CommanderID: 1}}
+	seedConfigEntry(t, "ShareCfg/child2_data.json", "1", `{"id":1}`)
+	seedConfigEntry(t, "ShareCfg/child2_attr.json", "101", `{"id":101,"character":1,"default_value":0}`)
+	seedConfigEntry(t, "ShareCfg/child2_resource.json", "1", `{"id":1,"character":1,"default_value":50}`)
 	return client
 }
 
@@ -811,7 +814,7 @@ func TestCommanderManualUsesConfig(t *testing.T) {
 
 func TestNewEducateRequestPersistsTBState(t *testing.T) {
 	client := setupConfigTest(t)
-	payload := protobuf.CS_29001{Id: proto.Uint32(7)}
+	payload := protobuf.CS_29001{Id: proto.Uint32(1)}
 	data, err := proto.Marshal(&payload)
 	if err != nil {
 		t.Fatalf("marshal payload failed: %v", err)
@@ -823,17 +826,17 @@ func TestNewEducateRequestPersistsTBState(t *testing.T) {
 
 	var response protobuf.SC_29002
 	decodeResponse(t, client, &response)
-	if response.GetTb().GetId() != 7 {
-		t.Fatalf("expected tb id 7")
+	if response.GetTb().GetId() != 1 {
+		t.Fatalf("expected tb id 1")
 	}
-	if _, err := orm.GetCommanderTB(client.Commander.CommanderID); err != nil {
+	if _, err := orm.GetCommanderTB(client.Commander.CommanderID, 1); err != nil {
 		t.Fatalf("expected tb state persisted: %v", err)
 	}
 }
 
 func TestNewEducateSetCallPersistsName(t *testing.T) {
 	client := setupConfigTest(t)
-	request := protobuf.CS_29001{Id: proto.Uint32(3)}
+	request := protobuf.CS_29001{Id: proto.Uint32(1)}
 	requestData, err := proto.Marshal(&request)
 	if err != nil {
 		t.Fatalf("marshal request failed: %v", err)
@@ -841,7 +844,7 @@ func TestNewEducateSetCallPersistsName(t *testing.T) {
 	if _, _, err := NewEducateRequest(&requestData, client); err != nil {
 		t.Fatalf("new educate request failed: %v", err)
 	}
-	setCall := protobuf.CS_29009{Id: proto.Uint32(3), Name: proto.String("Commander")}
+	setCall := protobuf.CS_29009{Id: proto.Uint32(1), Name: proto.String("Commander")}
 	callData, err := proto.Marshal(&setCall)
 	if err != nil {
 		t.Fatalf("marshal set call failed: %v", err)
@@ -849,7 +852,7 @@ func TestNewEducateSetCallPersistsName(t *testing.T) {
 	if _, _, err := NewEducateSetCall(&callData, client); err != nil {
 		t.Fatalf("new educate set call failed: %v", err)
 	}
-	entry, err := orm.GetCommanderTB(client.Commander.CommanderID)
+	entry, err := orm.GetCommanderTB(client.Commander.CommanderID, 1)
 	if err != nil {
 		t.Fatalf("load commander tb failed: %v", err)
 	}

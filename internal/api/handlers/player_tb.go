@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/kataras/iris/v12"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/ggmolly/belfast/internal/api/response"
 	"github.com/ggmolly/belfast/internal/api/types"
@@ -24,12 +27,16 @@ import (
 // @Failure     500  {object}  APIErrorResponseDoc
 // @Router      /api/v1/players/{id}/tb [get]
 func (handler *PlayerHandler) PlayerTB(ctx iris.Context) {
+	characterID, ok := playerTBCharacter(ctx)
+	if !ok {
+		return
+	}
 	commander, err := loadCommanderDetail(ctx)
 	if err != nil {
 		writeCommanderError(ctx, err)
 		return
 	}
-	entry, err := orm.GetCommanderTB(commander.CommanderID)
+	entry, err := orm.GetCommanderTB(commander.CommanderID, characterID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			ctx.StatusCode(http.StatusNotFound)
@@ -80,6 +87,10 @@ func (handler *PlayerHandler) PlayerTB(ctx iris.Context) {
 // @Failure     500  {object}  APIErrorResponseDoc
 // @Router      /api/v1/players/{id}/tb [post]
 func (handler *PlayerHandler) CreatePlayerTB(ctx iris.Context) {
+	characterID, ok := playerTBCharacter(ctx)
+	if !ok {
+		return
+	}
 	commander, err := loadCommanderDetail(ctx)
 	if err != nil {
 		writeCommanderError(ctx, err)
@@ -96,7 +107,7 @@ func (handler *PlayerHandler) CreatePlayerTB(ctx iris.Context) {
 		_ = ctx.JSON(response.Error("bad_request", "tb and permanent payloads are required", nil))
 		return
 	}
-	if _, err := orm.GetCommanderTB(commander.CommanderID); err == nil {
+	if _, err := orm.GetCommanderTB(commander.CommanderID, characterID); err == nil {
 		ctx.StatusCode(http.StatusConflict)
 		_ = ctx.JSON(response.Error("conflict", "tb state already exists", nil))
 		return
@@ -109,6 +120,11 @@ func (handler *PlayerHandler) CreatePlayerTB(ctx iris.Context) {
 	if err := protojson.Unmarshal(payload.Tb.Value, info); err != nil {
 		ctx.StatusCode(http.StatusBadRequest)
 		_ = ctx.JSON(response.Error("bad_request", "invalid tb payload", nil))
+		return
+	}
+	if info.GetId() != characterID {
+		ctx.StatusCode(http.StatusBadRequest)
+		_ = ctx.JSON(response.Error("bad_request", "tb.id must match character_id (default 1)", nil))
 		return
 	}
 	permanent := &protobuf.TBPERMANENT{}
@@ -149,6 +165,10 @@ func (handler *PlayerHandler) CreatePlayerTB(ctx iris.Context) {
 // @Failure     500  {object}  APIErrorResponseDoc
 // @Router      /api/v1/players/{id}/tb [put]
 func (handler *PlayerHandler) UpdatePlayerTB(ctx iris.Context) {
+	characterID, ok := playerTBCharacter(ctx)
+	if !ok {
+		return
+	}
 	commander, err := loadCommanderDetail(ctx)
 	if err != nil {
 		writeCommanderError(ctx, err)
@@ -165,7 +185,7 @@ func (handler *PlayerHandler) UpdatePlayerTB(ctx iris.Context) {
 		_ = ctx.JSON(response.Error("bad_request", "tb and permanent payloads are required", nil))
 		return
 	}
-	entry, err := orm.GetCommanderTB(commander.CommanderID)
+	entry, err := orm.GetCommanderTB(commander.CommanderID, characterID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			ctx.StatusCode(http.StatusNotFound)
@@ -182,13 +202,38 @@ func (handler *PlayerHandler) UpdatePlayerTB(ctx iris.Context) {
 		_ = ctx.JSON(response.Error("bad_request", "invalid tb payload", nil))
 		return
 	}
+	if info.GetId() != entry.CharacterID {
+		ctx.StatusCode(http.StatusBadRequest)
+		_ = ctx.JSON(response.Error("bad_request", "tb.id must match character_id", nil))
+		return
+	}
 	permanent := &protobuf.TBPERMANENT{}
 	if err := protojson.Unmarshal(payload.Permanent.Value, permanent); err != nil {
 		ctx.StatusCode(http.StatusBadRequest)
 		_ = ctx.JSON(response.Error("bad_request", "invalid permanent payload", nil))
 		return
 	}
-	if err := orm.SaveCommanderTB(entry, info, permanent); err != nil {
+	var metadata struct {
+		Lifecycle json.RawMessage `json:"lifecycle"`
+	}
+	if err := json.Unmarshal(entry.Metadata, &metadata); err != nil {
+		ctx.StatusCode(http.StatusInternalServerError)
+		_ = ctx.JSON(response.Error("internal_error", "invalid stored educate metadata", nil))
+		return
+	}
+	if len(metadata.Lifecycle) != 0 {
+		previous, previousPermanent, err := entry.Decode()
+		if err != nil {
+			ctx.StatusCode(http.StatusInternalServerError)
+			_ = ctx.JSON(response.Error("internal_error", "invalid stored educate snapshot", nil))
+			return
+		}
+		if !proto.Equal(previous, info) || !proto.Equal(previousPermanent, permanent) {
+			ctx.StatusCode(http.StatusConflict)
+			_ = ctx.JSON(response.Error("conflict", "managed educate saves must be changed through game transactions", nil))
+			return
+		}
+	} else if err := orm.SaveCommanderTB(entry, info, permanent); err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		_ = ctx.JSON(response.Error("internal_error", "failed to save tb state", nil))
 		return
@@ -211,12 +256,16 @@ func (handler *PlayerHandler) UpdatePlayerTB(ctx iris.Context) {
 // @Failure     500  {object}  APIErrorResponseDoc
 // @Router      /api/v1/players/{id}/tb [delete]
 func (handler *PlayerHandler) DeletePlayerTB(ctx iris.Context) {
+	characterID, ok := playerTBCharacter(ctx)
+	if !ok {
+		return
+	}
 	commander, err := loadCommanderDetail(ctx)
 	if err != nil {
 		writeCommanderError(ctx, err)
 		return
 	}
-	deleted, err := orm.DeleteCommanderTB(commander.CommanderID)
+	deleted, err := orm.DeleteCommanderTB(commander.CommanderID, characterID)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		_ = ctx.JSON(response.Error("internal_error", "failed to delete tb state", nil))
@@ -228,4 +277,20 @@ func (handler *PlayerHandler) DeletePlayerTB(ctx iris.Context) {
 		return
 	}
 	_ = ctx.JSON(response.Success(nil))
+}
+
+// Existing local admin URLs refer deterministically to character 1; callers
+// editing another character must explicitly pass ?character_id=2.
+func playerTBCharacter(ctx iris.Context) (uint32, bool) {
+	raw := ctx.URLParam("character_id")
+	if raw == "" {
+		return 1, true
+	}
+	id, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil || id == 0 {
+		ctx.StatusCode(http.StatusBadRequest)
+		_ = ctx.JSON(response.Error("bad_request", "invalid character_id", nil))
+		return 0, false
+	}
+	return uint32(id), true
 }

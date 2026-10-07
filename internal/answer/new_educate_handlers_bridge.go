@@ -5,15 +5,6 @@ import (
 	"github.com/ggmolly/belfast/internal/connection"
 )
 
-func appendUniqueUint32(values []uint32, value uint32) []uint32 {
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
-	}
-	return append(values, value)
-}
-
 func NewEducateGetEndings(buffer *[]byte, client *connection.Client) (int, int, error) {
 	return neweducate.NewEducateGetEndings(buffer, client)
 }

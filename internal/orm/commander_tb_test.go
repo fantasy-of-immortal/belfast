@@ -10,7 +10,7 @@ import (
 func TestSaveCommanderTBUpdatesState(t *testing.T) {
 	initRandomFlagShipTestDB(t)
 	commanderID := uint32(4242)
-	if _, err := DeleteCommanderTB(commanderID); err != nil {
+	if _, err := DeleteCommanderTB(commanderID, 1); err != nil {
 		t.Fatalf("clear tb state: %v", err)
 	}
 	info := buildTestTBInfo()
@@ -33,7 +33,7 @@ func TestSaveCommanderTBUpdatesState(t *testing.T) {
 	if err := SaveCommanderTB(entry, info, permanent); err != nil {
 		t.Fatalf("save commander tb: %v", err)
 	}
-	loaded, err := GetCommanderTB(commanderID)
+	loaded, err := GetCommanderTB(commanderID, 1)
 	if err != nil {
 		t.Fatalf("load commander tb: %v", err)
 	}
