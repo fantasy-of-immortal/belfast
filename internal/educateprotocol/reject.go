@@ -1,7 +1,9 @@
 package educateprotocol
 
 import (
+	"fmt"
 	"github.com/ggmolly/belfast/internal/connection"
+	"github.com/ggmolly/belfast/internal/protobuf"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -13,7 +15,17 @@ func Reject(buffer *[]byte, client *connection.Client, request, response proto.M
 		return 0, packetID, err
 	}
 	message := response.ProtoReflect()
-	message.Set(message.Descriptor().Fields().ByName("result"), protoreflect.ValueOfUint32(1))
+	result := message.Descriptor().Fields().ByName("result")
+	if result == nil {
+		// Queries without a result field cannot represent failure in their normal
+		// reply. Use the dispatcher's existing unsupported-command response.
+		var requestID uint32
+		if _, err := fmt.Sscanf(string(request.ProtoReflect().Descriptor().Name()), "CS_%d", &requestID); err != nil {
+			return 0, packetID, err
+		}
+		return client.SendMessage(10998, &protobuf.SC_10998{Cmd: proto.Uint32(requestID), Result: proto.Uint32(1)})
+	}
+	message.Set(result, protoreflect.ValueOfUint32(1))
 	fillRequiredResponse(message)
 	return client.SendMessage(packetID, response)
 }
