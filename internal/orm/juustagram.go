@@ -85,8 +85,15 @@ func GetJuustagramGroups(commanderID uint32) ([]JuustagramGroup, error) {
 			ReplyList:     []JuustagramReply{},
 		}
 		groups[gidx].ChatGroups = append(groups[gidx].ChatGroups, cg)
-		chatGroupByID[uint32(cr.ID)] = &groups[gidx].ChatGroups[len(groups[gidx].ChatGroups)-1]
 		chatIDs = append(chatIDs, cr.ID)
+	}
+	// Index only after appending all topics: slice growth can move earlier
+	// elements, leaving pointers into the old backing array.
+	for i := range groups {
+		for j := range groups[i].ChatGroups {
+			chat := &groups[i].ChatGroups[j]
+			chatGroupByID[chat.ID] = chat
+		}
 	}
 	if len(chatIDs) == 0 {
 		return groups, nil

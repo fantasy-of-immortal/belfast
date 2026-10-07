@@ -68,8 +68,15 @@ func ListJuustagramGroups(commanderID uint32, offset int, limit int) ([]Juustagr
 			ReplyList:     []JuustagramReply{},
 		}
 		groups[gidx].ChatGroups = append(groups[gidx].ChatGroups, cg)
-		chatGroupByID[uint32(cr.ID)] = &groups[gidx].ChatGroups[len(groups[gidx].ChatGroups)-1]
 		chatIDs = append(chatIDs, cr.ID)
+	}
+	// Build pointers after all topics are appended, so slice growth cannot
+	// detach replies from the groups returned to the caller.
+	for i := range groups {
+		for j := range groups[i].ChatGroups {
+			chat := &groups[i].ChatGroups[j]
+			chatGroupByID[chat.ID] = chat
+		}
 	}
 	if len(chatIDs) > 0 {
 		replyRows, err := db.DefaultStore.Queries.ListJuustagramRepliesByChatGroupRecordIDs(ctx, chatIDs)
@@ -126,8 +133,11 @@ func GetJuustagramGroup(commanderID uint32, groupID uint32) (*JuustagramGroup, e
 			ReplyList:     []JuustagramReply{},
 		}
 		group.ChatGroups = append(group.ChatGroups, cg)
-		chatGroupByID[uint32(cr.ID)] = &group.ChatGroups[len(group.ChatGroups)-1]
 		chatIDs = append(chatIDs, cr.ID)
+	}
+	for i := range group.ChatGroups {
+		chat := &group.ChatGroups[i]
+		chatGroupByID[chat.ID] = chat
 	}
 	if len(chatIDs) > 0 {
 		replyRows, err := db.DefaultStore.Queries.ListJuustagramRepliesByChatGroupRecordIDs(ctx, chatIDs)
