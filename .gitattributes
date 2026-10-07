@@ -1,0 +1,3 @@
+# These migrations have already been deployed with LF checksums.
+internal/db/migrations/0076_owned_ship_propose_time.sql text eol=lf
+internal/db/migrations/0077_educate_character_saves.sql text eol=lf

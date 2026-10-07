@@ -140,7 +140,7 @@ func RunMigrations(ctx context.Context, db *sql.DB, opts MigratorOptions) error 
 	}
 	for _, m := range migrations {
 		if appliedChecksum, ok := applied[m.Version]; ok {
-			if appliedChecksum != m.Checksum {
+			if appliedChecksum != m.Checksum && !knownLocalMigration76(m, appliedChecksum) {
 				return fmt.Errorf("migration %d already applied but checksum changed (%s)", m.Version, m.Filename)
 			}
 			continue
@@ -150,6 +150,13 @@ func RunMigrations(ctx context.Context, db *sql.DB, opts MigratorOptions) error 
 		}
 	}
 	return nil
+}
+
+// The only accepted historical edit is removal of migration 76's hardcoded
+// local schema. Both byte hashes are pinned; all other edits still fail closed.
+// Keep the original checksum in the DB as provenance, without rewriting it.
+func knownLocalMigration76(m Migration, applied [32]byte) bool {
+	return m.Version == 76 && fmt.Sprintf("%x", m.Checksum) == "a4a5c69db0b671d2506c90bbe19eb5670805ff597f391358c00bb1cd41bd2673" && fmt.Sprintf("%x", applied) == "85d2ef79c1341c99d9c491a488990b5a6330f40977428c0ae95902e26f0085e5"
 }
 
 func ensureSchemaMigrationsTable(ctx context.Context, db *sql.DB, schemaName string) error {
