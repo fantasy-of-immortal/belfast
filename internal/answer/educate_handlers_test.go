@@ -67,87 +67,26 @@ func TestEducateGetEventsSortedAndConsumedFiltered(t *testing.T) {
 	}
 }
 
-func TestEducateTriggerEventValidationAndSuccess(t *testing.T) {
-	client := setupEducateHandlerTest(t, 9102)
-	seedConfigEntry(t, "ShareCfg/child_event.json", "rows", `[{"id":110}]`)
-
-	badBuf, _ := proto.Marshal(&protobuf.CS_27016{Eventid: proto.Uint32(999)})
-	if _, _, err := EducateTriggerEvent(&badBuf, client); err != nil {
-		t.Fatalf("EducateTriggerEvent bad: %v", err)
-	}
-	var badResp protobuf.SC_27017
-	decodePacketAt(t, client, 0, 27017, &badResp)
-	if badResp.GetResult() == 0 {
-		t.Fatalf("expected failure for unknown event")
-	}
-
-	client.Buffer.Reset()
-	okBuf, _ := proto.Marshal(&protobuf.CS_27016{Eventid: proto.Uint32(110)})
-	if _, _, err := EducateTriggerEvent(&okBuf, client); err != nil {
-		t.Fatalf("EducateTriggerEvent ok: %v", err)
-	}
-	var okResp protobuf.SC_27017
-	decodePacketAt(t, client, 0, 27017, &okResp)
-	if okResp.GetResult() != 0 {
-		t.Fatalf("expected success, got %d", okResp.GetResult())
-	}
-	has, err := hasEducateFlag(client.Commander.CommanderID, educateFlagID(educateFlagHomeEventBase, 110))
-	if err != nil {
-		t.Fatalf("check flag: %v", err)
-	}
-	if !has {
-		t.Fatalf("expected consumed flag after success")
-	}
-}
-
-func TestEducateTriggerSpecEventSuccessDuplicateAndInvalid(t *testing.T) {
-	client := setupEducateHandlerTest(t, 9103)
-	seedConfigEntry(t, "ShareCfg/child_event_special.json", "rows", `[{"id":321,"show":1,"type":3,"drop_display":[2,201,2]}]`)
-
-	buf, _ := proto.Marshal(&protobuf.CS_27027{SpecEventsId: proto.Uint32(321)})
-	if _, _, err := EducateTriggerSpecEvent(&buf, client); err != nil {
-		t.Fatalf("EducateTriggerSpecEvent: %v", err)
-	}
-	var resp protobuf.SC_27028
-	decodePacketAt(t, client, 0, 27028, &resp)
-	if resp.GetResult() != 0 || len(resp.GetDrops()) != 1 || resp.GetDrops()[0].GetId() != 201 {
-		t.Fatalf("unexpected success response: %+v", resp)
-	}
-	if got := client.Commander.GetItemCount(201); got != 2 {
-		t.Fatalf("expected persisted special-event reward item count 2, got %d", got)
-	}
-
-	client.Buffer.Reset()
-	if _, _, err := EducateTriggerSpecEvent(&buf, client); err != nil {
-		t.Fatalf("EducateTriggerSpecEvent duplicate: %v", err)
-	}
-	decodePacketAt(t, client, 0, 27028, &resp)
-	if resp.GetResult() == 0 {
-		t.Fatalf("expected duplicate failure")
-	}
-
-	client.Buffer.Reset()
-	badBuf, _ := proto.Marshal(&protobuf.CS_27027{SpecEventsId: proto.Uint32(999)})
-	if _, _, err := EducateTriggerSpecEvent(&badBuf, client); err != nil {
-		t.Fatalf("EducateTriggerSpecEvent invalid: %v", err)
-	}
-	decodePacketAt(t, client, 0, 27028, &resp)
-	if resp.GetResult() == 0 {
-		t.Fatalf("expected invalid-id failure")
-	}
-}
-
 func TestEducateShopRequestAndPurchaseFlow(t *testing.T) {
 	client := setupEducateHandlerTest(t, 9104)
 	seedConfigEntry(t, "ShareCfg/child_shop.json", "rows", `[{"id":2,"goods_num":2,"goods_pool":[[11,1,500,[]],[12,1,500,[]]],"goods_refresh_time":-1}]`)
 	seedConfigEntry(t, "ShareCfg/child_shop_template.json", "rows", `[
-		{"id":11,"item_id":500,"resource":1,"resource_num":10,"buy_num":1},
-		{"id":12,"item_id":501,"resource":1,"resource_num":20,"buy_num":1}
+		{"id":11,"time":"always","item_id":500,"resource":1,"resource_num":10,"buy_num":1},
+		{"id":12,"time":"always","item_id":501,"resource":1,"resource_num":20,"buy_num":1}
 	]`)
 	if err := client.Commander.SetResource(1, 50); err != nil {
 		t.Fatalf("seed resource: %v", err)
 	}
 
+	state, err := orm.GetOrCreateLegacyEducateState(9104)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Resources[1] = 50
+	if err := orm.SaveLegacyEducateState(state); err != nil {
+		t.Fatal(err)
+	}
+	seedConfigEntry(t, "ShareCfg/child_item.json", "500", `{"id":500,"display":[]}`)
 	getBuf, _ := proto.Marshal(&protobuf.CS_27043{ShopId: proto.Uint32(2)})
 	if _, _, err := EducateRequestShopData(&getBuf, client); err != nil {
 		t.Fatalf("EducateRequestShopData: %v", err)
@@ -168,11 +107,11 @@ func TestEducateShopRequestAndPurchaseFlow(t *testing.T) {
 	if buyResp.GetResult() != 0 || len(buyResp.GetDrops()) != 1 || buyResp.GetDrops()[0].GetId() != 500 {
 		t.Fatalf("unexpected purchase response: %+v", buyResp)
 	}
-	if got := client.Commander.GetResourceCount(1); got != 40 {
-		t.Fatalf("expected resource 40, got %d", got)
+	if got := client.Commander.GetResourceCount(1); got != 50 {
+		t.Fatalf("expected main-port resource unchanged at 50, got %d", got)
 	}
-	if got := client.Commander.GetItemCount(500); got != 1 {
-		t.Fatalf("expected purchased item count 1, got %d", got)
+	if got := client.Commander.GetItemCount(500); got != 0 {
+		t.Fatalf("expected no main-port item, got %d", got)
 	}
 
 	client.Buffer.Reset()
@@ -218,54 +157,22 @@ func TestEducateShoppingFailurePathsAndDecodeError(t *testing.T) {
 	}
 }
 
-func TestEducateTargetAwardSuccessDuplicateAndFailure(t *testing.T) {
+// Real selected-target claims and educate inventory are exercised with current
+// configs in TestRecoveryL03LegacyTaskClaims. Main-port progress cannot award them.
+func TestEducateTargetAwardRejectsMainPortProgressAndUnsupportedType(t *testing.T) {
 	client := setupEducateHandlerTest(t, 9106)
-	seedConfigEntry(t, "ShareCfg/child_target_set.json", "rows", `[{"id":1,"stage":1,"ids":[1001,1002],"target_progress":2,"drop_display":[2,201,1]}]`)
-	seedConfigEntry(t, "ShareCfg/child_task.json", "rows", `[{"id":1001,"task_target_progress":1},{"id":1002,"task_target_progress":1}]`)
 	seedCommanderTaskProgress(t, client.Commander.CommanderID, 1001, 1, 1)
 	seedCommanderTaskProgress(t, client.Commander.CommanderID, 1002, 1, 1)
-
-	buf, _ := proto.Marshal(&protobuf.CS_27035{Type: proto.Uint32(0)})
-	if _, _, err := EducateGetTargetAward(&buf, client); err != nil {
-		t.Fatalf("EducateGetTargetAward: %v", err)
-	}
-	var resp protobuf.SC_27036
-	decodePacketAt(t, client, 0, 27036, &resp)
-	if resp.GetResult() != 0 || len(resp.GetDrops()) != 1 {
-		t.Fatalf("unexpected success response: %+v", resp)
-	}
-	if got := client.Commander.GetItemCount(201); got != 1 {
-		t.Fatalf("expected persisted target reward item count 1, got %d", got)
-	}
-
-	client.Buffer.Reset()
-	if _, _, err := EducateGetTargetAward(&buf, client); err != nil {
-		t.Fatalf("EducateGetTargetAward duplicate: %v", err)
-	}
-	decodePacketAt(t, client, 0, 27036, &resp)
-	if resp.GetResult() == 0 {
-		t.Fatalf("expected duplicate claim failure")
-	}
-
-	client.Buffer.Reset()
-	badTypeBuf, _ := proto.Marshal(&protobuf.CS_27035{Type: proto.Uint32(1)})
-	if _, _, err := EducateGetTargetAward(&badTypeBuf, client); err != nil {
-		t.Fatalf("EducateGetTargetAward bad type: %v", err)
-	}
-	decodePacketAt(t, client, 0, 27036, &resp)
-	if resp.GetResult() == 0 {
-		t.Fatalf("expected unsupported type failure")
-	}
-
-	client2 := setupEducateHandlerTest(t, 9107)
-	seedConfigEntry(t, "ShareCfg/child_target_set.json", "rows", `[{"id":1,"stage":1,"ids":[1001,1002],"target_progress":3,"drop_display":[2,201,1]}]`)
-	seedConfigEntry(t, "ShareCfg/child_task.json", "rows", `[{"id":1001,"task_target_progress":1},{"id":1002,"task_target_progress":1}]`)
-	seedCommanderTaskProgress(t, client2.Commander.CommanderID, 1001, 1, 1)
-	if _, _, err := EducateGetTargetAward(&buf, client2); err != nil {
-		t.Fatalf("EducateGetTargetAward ineligible: %v", err)
-	}
-	decodePacketAt(t, client2, 0, 27036, &resp)
-	if resp.GetResult() == 0 {
-		t.Fatalf("expected ineligible failure")
+	for _, kind := range []uint32{0, 1} {
+		client.Buffer.Reset()
+		buf, _ := proto.Marshal(&protobuf.CS_27035{Type: proto.Uint32(kind)})
+		if _, _, err := EducateGetTargetAward(&buf, client); err != nil {
+			t.Fatal(err)
+		}
+		var response protobuf.SC_27036
+		decodePacketAt(t, client, 0, 27036, &response)
+		if response.GetResult() == 0 || len(response.Drops) != 0 {
+			t.Fatal("unselected target/main-port progress awarded", &response)
+		}
 	}
 }

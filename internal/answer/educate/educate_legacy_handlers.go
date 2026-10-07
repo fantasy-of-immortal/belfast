@@ -2,6 +2,8 @@ package educate
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/ggmolly/belfast/internal/educateprotocol"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,12 +35,18 @@ const (
 )
 
 type legacyChildSite struct {
+	Unlock1      []uint32          `json:"unlock_time_1"`
+	Unlock2      []uint32          `json:"unlock_time_2"`
+	Ability      [][]uint32        `json:"ability"`
 	ID           uint32            `json:"id"`
 	Option       []uint32          `json:"option"`
 	OptionRandom []json.RawMessage `json:"option_random"`
 }
 
 type legacyChildSiteOption struct {
+	TimeLimit  [][]uint32 `json:"time_limit"`
+	Display    [][]int32  `json:"result_display"`
+	Polaroids  []uint32   `json:"polarid_list"`
 	ID         uint32     `json:"id"`
 	Type       uint32     `json:"type"`
 	Result     []uint32   `json:"result"`
@@ -47,14 +55,21 @@ type legacyChildSiteOption struct {
 }
 
 type legacyChildTask struct {
-	ID          uint32   `json:"id"`
-	Type1       uint32   `json:"type_1"`
-	Arg         uint32   `json:"arg"`
-	DropDisplay []uint32 `json:"drop_display"`
+	ID             uint32          `json:"id"`
+	Type1          uint32          `json:"type_1"`
+	Arg            uint32          `json:"arg"`
+	DropDisplay    []uint32        `json:"drop_display"`
+	Type2          uint32          `json:"type_2"`
+	SubType        json.RawMessage `json:"sub_type"`
+	TimeLimit      [][]uint32      `json:"time_limit"`
+	TargetProgress uint32          `json:"task_target_progress"`
 }
 
 type legacyChildTargetSet struct {
-	ID uint32 `json:"id"`
+	ID        uint32          `json:"id"`
+	Stage     uint32          `json:"stage"`
+	IDs       []uint32        `json:"ids"`
+	Condition json.RawMessage `json:"condition"`
 }
 
 type legacyChildData struct {
@@ -69,70 +84,11 @@ type legacySecretarySpecialShip struct {
 }
 
 func EducateUpgradeFavor(buffer *[]byte, client *connection.Client) (int, int, error) {
-	var payload protobuf.CS_27006
-	if err := proto.Unmarshal(*buffer, &payload); err != nil {
-		return 0, 27007, err
-	}
-
-	response := protobuf.SC_27007{
-		Result: proto.Uint32(legacyEducateResultFailure),
-		Drops:  []*protobuf.CHILD_DROP{},
-	}
-
-	state, err := orm.GetOrCreateLegacyEducateState(client.Commander.CommanderID)
-	if err != nil {
-		response.Result = proto.Uint32(legacyEducateResultFailure)
-		return client.SendMessage(27007, &response)
-	}
-
-	maxFavor := uint32(0)
-	if childData, ok, err := loadLegacyChildData(); err == nil && ok {
-		maxFavor = childData.FavorLv
-	}
-	if maxFavor > 0 && state.FavorLv >= maxFavor {
-		return client.SendMessage(27007, &response)
-	}
-
-	state.FavorLv++
-	if err := orm.SaveLegacyEducateState(state); err != nil {
-		return client.SendMessage(27007, &response)
-	}
-
-	response.Result = proto.Uint32(legacyEducateResultOK)
-	return client.SendMessage(27007, &response)
+	return educateprotocol.Reject(buffer, client, &protobuf.CS_27006{}, &protobuf.SC_27007{}, 27007)
 }
-
 func EducateTriggerEnd(buffer *[]byte, client *connection.Client) (int, int, error) {
-	var payload protobuf.CS_27008
-	if err := proto.Unmarshal(*buffer, &payload); err != nil {
-		return 0, 27009, err
-	}
-
-	response := protobuf.SC_27009{Result: proto.Uint32(legacyEducateResultFailure)}
-	endingID := payload.GetEndingId()
-	if endingID == 0 {
-		return client.SendMessage(27009, &response)
-	}
-	if ok, err := legacyConfigExists(childEndingCategory, endingID); err != nil || !ok {
-		return client.SendMessage(27009, &response)
-	}
-
-	state, err := orm.GetOrCreateLegacyEducateState(client.Commander.CommanderID)
-	if err != nil {
-		return client.SendMessage(27009, &response)
-	}
-	state.Endings = appendUniqueUint32(state.Endings, endingID)
-	for _, qualifiedID := range payload.GetQualifiedId() {
-		state.Qualifieds = appendUniqueUint32(state.Qualifieds, qualifiedID)
-	}
-	if err := orm.SaveLegacyEducateState(state); err != nil {
-		return client.SendMessage(27009, &response)
-	}
-
-	response.Result = proto.Uint32(legacyEducateResultOK)
-	return client.SendMessage(27009, &response)
+	return educateprotocol.Reject(buffer, client, &protobuf.CS_27008{}, &protobuf.SC_27009{}, 27009)
 }
-
 func EducateGetEndings(buffer *[]byte, client *connection.Client) (int, int, error) {
 	var payload protobuf.CS_27010
 	if err := proto.Unmarshal(*buffer, &payload); err != nil {
@@ -162,21 +118,28 @@ func EducateSetTarget(buffer *[]byte, client *connection.Client) (int, int, erro
 	if targetID == 0 {
 		return client.SendMessage(27020, &response)
 	}
-	if _, ok, err := loadLegacyConfigByID[legacyChildTargetSet](childTargetSetCategory, targetID); err != nil || !ok {
-		return client.SendMessage(27020, &response)
-	}
-
-	state, err := orm.GetOrCreateLegacyEducateState(client.Commander.CommanderID)
+	var added, updated []*protobuf.CHILD_TASK
+	var removed []uint32
+	err := orm.UpdateLegacyEducateState(client.Commander.CommanderID, func(state *orm.LegacyEducateState) error {
+		var err error
+		removed, added, updated, err = selectLegacyTarget(state, targetID)
+		return err
+	})
 	if err != nil {
-		return client.SendMessage(27020, &response)
-	}
-	state.TargetID = targetID
-	if err := orm.SaveLegacyEducateState(state); err != nil {
 		return client.SendMessage(27020, &response)
 	}
 
 	response.Result = proto.Uint32(legacyEducateResultOK)
-	return client.SendMessage(27020, &response)
+	written, packetID, err := client.SendMessage(27020, &response)
+	if err != nil {
+		return written, packetID, err
+	}
+	if len(removed) != 0 {
+		if _, _, err := client.SendMessage(27022, &protobuf.SC_27022{Ids: removed}); err != nil {
+			return written, packetID, err
+		}
+	}
+	return written, packetID, sendLegacyTaskChanges(client, added, updated)
 }
 
 func EducateSubmitTask(buffer *[]byte, client *connection.Client) (int, int, error) {
@@ -199,16 +162,22 @@ func EducateSubmitTask(buffer *[]byte, client *connection.Client) (int, int, err
 		return client.SendMessage(27024, &response)
 	}
 
-	state, err := orm.GetOrCreateLegacyEducateState(client.Commander.CommanderID)
+	err = orm.UpdateLegacyEducateState(client.Commander.CommanderID, func(state *orm.LegacyEducateState) error {
+		if err := syncLegacyTasks(state); err != nil {
+			return err
+		}
+		progress, active := state.TaskProgress[taskID]
+		if !active || state.ClaimedTasks[taskID] || progress < taskConfig.Arg || !legacyTaskInTime(*taskConfig, *state.CurTime) {
+			return fmt.Errorf("legacy task not claimable")
+		}
+		if err := applyLegacyTaskDrop(state, taskConfig.DropDisplay); err != nil {
+			return err
+		}
+		state.ClaimedTasks[taskID] = true
+		delete(state.TaskProgress, taskID)
+		return nil
+	})
 	if err != nil {
-		return client.SendMessage(27024, &response)
-	}
-	if state.TaskProgress[taskID] < taskConfig.Arg {
-		return client.SendMessage(27024, &response)
-	}
-
-	delete(state.TaskProgress, taskID)
-	if err := orm.SaveLegacyEducateState(state); err != nil {
 		return client.SendMessage(27024, &response)
 	}
 
@@ -245,88 +214,11 @@ func EducateSetCall(buffer *[]byte, client *connection.Client) (int, int, error)
 }
 
 func EducateAddTaskProgress(buffer *[]byte, client *connection.Client) (int, int, error) {
-	var payload protobuf.CS_27037
-	if err := proto.Unmarshal(*buffer, &payload); err != nil {
-		return 0, 27038, err
-	}
-
-	response := protobuf.SC_27038{Result: proto.Uint32(legacyEducateResultFailure)}
-	if payload.GetType_1() < 1 || payload.GetType_1() > 3 || len(payload.GetProgresses()) == 0 {
-		return client.SendMessage(27038, &response)
-	}
-
-	state, err := orm.GetOrCreateLegacyEducateState(client.Commander.CommanderID)
-	if err != nil {
-		return client.SendMessage(27038, &response)
-	}
-
-	updatedTasks := make([]*protobuf.CHILD_TASK, 0, len(payload.GetProgresses()))
-	for _, progress := range payload.GetProgresses() {
-		if progress.GetTaskId() == 0 || progress.GetProgress() == 0 {
-			return client.SendMessage(27038, &response)
-		}
-		taskConfig, ok, err := loadLegacyConfigByID[legacyChildTask](childTaskCategory, progress.GetTaskId())
-		if err != nil || !ok || taskConfig.Type1 != payload.GetType_1() {
-			return client.SendMessage(27038, &response)
-		}
-		newProgress := state.TaskProgress[progress.GetTaskId()] + progress.GetProgress()
-		if taskConfig.Arg > 0 && newProgress > taskConfig.Arg {
-			newProgress = taskConfig.Arg
-		}
-		state.TaskProgress[progress.GetTaskId()] = newProgress
-		updatedTasks = append(updatedTasks, &protobuf.CHILD_TASK{Id: proto.Uint32(progress.GetTaskId()), Progress: proto.Uint32(newProgress)})
-	}
-
-	if err := orm.SaveLegacyEducateState(state); err != nil {
-		return client.SendMessage(27038, &response)
-	}
-
-	response.Result = proto.Uint32(legacyEducateResultOK)
-	bytesWritten, packetID, err := client.SendMessage(27038, &response)
-	if err != nil {
-		return bytesWritten, packetID, err
-	}
-	if len(updatedTasks) > 0 {
-		if _, _, err := client.SendMessage(27025, &protobuf.SC_27025{Tasks: updatedTasks}); err != nil {
-			return bytesWritten, packetID, err
-		}
-	}
-	return bytesWritten, packetID, nil
+	return educateprotocol.Reject(buffer, client, &protobuf.CS_27037{}, &protobuf.SC_27038{}, 27038)
 }
-
 func EducateAddExtraAttr(buffer *[]byte, client *connection.Client) (int, int, error) {
-	var payload protobuf.CS_27039
-	if err := proto.Unmarshal(*buffer, &payload); err != nil {
-		return 0, 27040, err
-	}
-
-	response := protobuf.SC_27040{Result: proto.Uint32(legacyEducateResultFailure)}
-	childData, ok, err := loadLegacyChildData()
-	if err != nil || !ok {
-		return client.SendMessage(27040, &response)
-	}
-	if !containsUint32(childData.Attr2List, payload.GetAttrId()) {
-		return client.SendMessage(27040, &response)
-	}
-
-	state, err := orm.GetOrCreateLegacyEducateState(client.Commander.CommanderID)
-	if err != nil {
-		return client.SendMessage(27040, &response)
-	}
-	if state.HadAdjustment {
-		return client.SendMessage(27040, &response)
-	}
-
-	state.Attrs[payload.GetAttrId()] += childData.Attr2Add
-	state.HadAdjustment = true
-	if err := orm.SaveLegacyEducateState(state); err != nil {
-		return client.SendMessage(27040, &response)
-	}
-
-	response.Result = proto.Uint32(legacyEducateResultOK)
-	return client.SendMessage(27040, &response)
+	return educateprotocol.Reject(buffer, client, &protobuf.CS_27039{}, &protobuf.SC_27040{}, 27040)
 }
-
 func ChangeEducateCharacter(buffer *[]byte, client *connection.Client) (int, int, error) {
 	var payload protobuf.CS_27041
 	if err := proto.Unmarshal(*buffer, &payload); err != nil {
@@ -360,82 +252,8 @@ func ChangeEducateCharacter(buffer *[]byte, client *connection.Client) (int, int
 }
 
 func EducateMapSiteOperate(buffer *[]byte, client *connection.Client) (int, int, error) {
-	var payload protobuf.CS_27004
-	if err := proto.Unmarshal(*buffer, &payload); err != nil {
-		return 0, 27005, err
-	}
-
-	response := protobuf.SC_27005{
-		Result:     proto.Uint32(legacyEducateResultFailure),
-		Drops:      []*protobuf.CHILD_DROP{},
-		EventDrops: []*protobuf.CHILD_DROP{},
-		Events:     []uint32{},
-		BranchId:   proto.Uint32(0),
-	}
-
-	site, ok, err := loadLegacyConfigByID[legacyChildSite](childSiteCategory, payload.GetSiteid())
-	if err != nil || !ok {
-		return client.SendMessage(27005, &response)
-	}
-	if !legacySiteHasOption(site, payload.GetOptionid()) {
-		return client.SendMessage(27005, &response)
-	}
-
-	option, ok, err := loadLegacyConfigByID[legacyChildSiteOption](childSiteOptionCategory, payload.GetOptionid())
-	if err != nil || !ok || option.Type != 2 {
-		return client.SendMessage(27005, &response)
-	}
-
-	state, err := orm.GetOrCreateLegacyEducateState(client.Commander.CommanderID)
-	if err != nil {
-		return client.SendMessage(27005, &response)
-	}
-
-	if len(option.CountLimit) >= 1 {
-		if state.OptionRecords[payload.GetOptionid()] >= option.CountLimit[0] {
-			return client.SendMessage(27005, &response)
-		}
-	}
-
-	for _, cost := range option.Cost {
-		if len(cost) < 3 {
-			continue
-		}
-		if cost[0] != 2 {
-			continue
-		}
-		if state.Resources[cost[1]] < int32(cost[2]) {
-			return client.SendMessage(27005, &response)
-		}
-	}
-
-	branchID := uint32(0)
-	for _, candidate := range option.Result {
-		if ok, err := legacyConfigExists(childSiteOptionBranchCategory, candidate); err == nil && ok {
-			branchID = candidate
-			break
-		}
-	}
-	if branchID == 0 {
-		return client.SendMessage(27005, &response)
-	}
-
-	for _, cost := range option.Cost {
-		if len(cost) < 3 || cost[0] != 2 {
-			continue
-		}
-		state.Resources[cost[1]] -= int32(cost[2])
-	}
-	state.OptionRecords[payload.GetOptionid()]++
-	if err := orm.SaveLegacyEducateState(state); err != nil {
-		return client.SendMessage(27005, &response)
-	}
-
-	response.Result = proto.Uint32(legacyEducateResultOK)
-	response.BranchId = proto.Uint32(branchID)
-	return client.SendMessage(27005, &response)
+	return recoverLegacyNumericSite(buffer, client)
 }
-
 func isValidLegacyCallName(name string) bool {
 	if name == "" {
 		return false

@@ -1,7 +1,7 @@
 package educate
 
 import (
-	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 
@@ -37,15 +37,16 @@ func EducateRequestShopData(buffer *[]byte, client *connection.Client) (int, int
 		return client.SendMessage(27044, response)
 	}
 
-	ctx := context.Background()
-	now := educateNow()
 	var state *orm.EducateShopState
-	err = orm.WithPGXTx(ctx, func(tx pgx.Tx) error {
+	err = orm.UpdateLegacyEducateStateTx(client.Commander.CommanderID, func(tx pgx.Tx, legacy *orm.LegacyEducateState) error {
 		var txErr error
-		state, txErr = ensureEducateShopStateTx(ctx, tx, client.Commander.CommanderID, shop, templates, now)
+		state, txErr = ensureLegacyShopTx(tx, legacy, shop, templates)
 		return txErr
 	})
 	if err != nil {
+		if errors.Is(err, errLegacyShopUnsupported) {
+			return client.SendMessage(27044, response)
+		}
 		return 0, 27044, err
 	}
 

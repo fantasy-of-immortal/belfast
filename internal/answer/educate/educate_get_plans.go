@@ -2,6 +2,7 @@ package educate
 
 import (
 	"github.com/ggmolly/belfast/internal/connection"
+	"github.com/ggmolly/belfast/internal/orm"
 	"github.com/ggmolly/belfast/internal/protobuf"
 	"google.golang.org/protobuf/proto"
 )
@@ -23,11 +24,23 @@ func EducateGetPlans(buffer *[]byte, client *connection.Client) (int, int, error
 		return client.SendMessage(27013, &response)
 	}
 
+	// Persist the week plan so CS_27002 (execute) can settle the drops.
+	err := orm.UpdateLegacyEducateState(client.Commander.CommanderID, func(state *orm.LegacyEducateState) error {
+		return prepareLegacyWeek(state, orm.LegacyEducatePlanCellsFromProto(payload.GetPlans()))
+	})
+	if err != nil {
+		response.Result = proto.Uint32(educatePlanValidationFailedResult)
+		return client.SendMessage(27013, &response)
+	}
+
 	response.Plans = payload.GetPlans()
 	return client.SendMessage(27013, &response)
 }
 
 func validateEducatePlanCells(cells []*protobuf.CHILD_PLAN_CELL) bool {
+	if len(cells) == 0 {
+		return false
+	}
 	for _, cell := range cells {
 		if cell == nil {
 			return false
@@ -39,7 +52,7 @@ func validateEducatePlanCells(cells []*protobuf.CHILD_PLAN_CELL) bool {
 			return false
 		}
 		values := cell.GetValue()
-		if len(values) == 0 {
+		if len(values) != 1 {
 			return false
 		}
 		for _, value := range values {

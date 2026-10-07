@@ -8,36 +8,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestEducateGetPlansSuccess(t *testing.T) {
-	client := &connection.Client{}
-	payload := protobuf.CS_27012{
-		Plans: []*protobuf.CHILD_PLAN_CELL{{
-			Day:   proto.Uint32(1),
-			Index: proto.Uint32(1),
-			Value: []*protobuf.CHILD_PLAN_VAL{{PlanId: proto.Uint32(1001)}},
-		}},
-	}
-	buffer, err := proto.Marshal(&payload)
-	if err != nil {
-		t.Fatalf("marshal failed: %v", err)
-	}
-
-	if _, _, err := EducateGetPlans(&buffer, client); err != nil {
-		t.Fatalf("EducateGetPlans failed: %v", err)
-	}
-
-	var response protobuf.SC_27013
-	decodePacketAt(t, client, 0, 27013, &response)
-	if response.GetResult() != 0 {
-		t.Fatalf("expected result 0, got %d", response.GetResult())
-	}
-	if len(response.GetPlans()) != 1 {
-		t.Fatalf("expected one plan in response")
-	}
-	if response.GetPlans()[0].GetDay() != 1 || response.GetPlans()[0].GetIndex() != 1 {
-		t.Fatalf("unexpected plan cell in response")
-	}
-}
+// Successful persisted weeks are covered by TestRecoveryL02LegacyWeekTransaction
+// with actual configs, commander, protocol frames and a dedicated PostgreSQL schema.
 
 func TestEducateGetPlansInvalidRange(t *testing.T) {
 	client := &connection.Client{}

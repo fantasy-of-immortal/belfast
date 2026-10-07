@@ -25,6 +25,11 @@ func EducateTriggerSpecEvent(buffer *[]byte, client *connection.Client) (int, in
 	if !ok {
 		return client.SendMessage(27028, response)
 	}
+	// A private result ID is not an empty reward. Type 4 changes discount
+	// state, whose duration and purchase handling are not restored yet.
+	if event.Result != 0 || len(event.DropDisplay) != 0 || event.Type != 2 {
+		return client.SendMessage(27028, response)
+	}
 
 	finishFlag := educateFlagID(educateFlagSpecialEventBase, payload.GetSpecEventsId())
 	alreadyDone, err := hasEducateFlag(client.Commander.CommanderID, finishFlag)
@@ -35,21 +40,9 @@ func EducateTriggerSpecEvent(buffer *[]byte, client *connection.Client) (int, in
 		return client.SendMessage(27028, response)
 	}
 
-	if drop := toChildDrop(event.DropDisplay); drop != nil {
-		if err := applyEducateChildDrop(client, drop); err != nil {
-			return 0, 27028, err
-		}
-		response.Drops = append(response.Drops, drop)
-	}
 	if err := setEducateFlag(client.Commander.CommanderID, finishFlag); err != nil {
 		return 0, 27028, err
 	}
-	if event.Type == 3 {
-		if err := setEducateFlag(client.Commander.CommanderID, educateFlagID(educateFlagDiscountBase, payload.GetSpecEventsId())); err != nil {
-			return 0, 27028, err
-		}
-	}
-
 	response.Result = proto.Uint32(educateResultOK)
 	return client.SendMessage(27028, response)
 }

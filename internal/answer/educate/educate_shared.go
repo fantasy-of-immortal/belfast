@@ -10,8 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/ggmolly/belfast/internal/connection"
-	"github.com/ggmolly/belfast/internal/consts"
 	"github.com/ggmolly/belfast/internal/db"
 	"github.com/ggmolly/belfast/internal/orm"
 	"github.com/ggmolly/belfast/internal/protobuf"
@@ -33,11 +31,12 @@ var educateNow = func() time.Time {
 }
 
 type educateSpecialEventConfig struct {
-	ID          uint32 `json:"id"`
-	Show        uint32 `json:"show"`
-	Type        uint32 `json:"type"`
-	Result      uint32 `json:"result"`
-	DropDisplay []int  `json:"drop_display"`
+	Date        [][]uint32 `json:"date"`
+	ID          uint32     `json:"id"`
+	Show        uint32     `json:"show"`
+	Type        uint32     `json:"type"`
+	Result      uint32     `json:"result"`
+	DropDisplay []int      `json:"drop_display"`
 }
 
 type educateEventConfig struct {
@@ -52,11 +51,12 @@ type educateShopConfig struct {
 }
 
 type educateShopTemplateConfig struct {
-	ID          uint32 `json:"id"`
-	ItemID      uint32 `json:"item_id"`
-	Resource    uint32 `json:"resource"`
-	ResourceNum uint32 `json:"resource_num"`
-	BuyNum      uint32 `json:"buy_num"`
+	Time        json.RawMessage `json:"time"`
+	ID          uint32          `json:"id"`
+	ItemID      uint32          `json:"item_id"`
+	Resource    uint32          `json:"resource"`
+	ResourceNum uint32          `json:"resource_num"`
+	BuyNum      uint32          `json:"buy_num"`
 }
 
 type educateTargetSetConfig struct {
@@ -226,40 +226,6 @@ func setEducateFlag(commanderID uint32, flagID uint32) error {
 		return nil
 	}
 	return orm.SetCommanderCommonFlag(commanderID, flagID)
-}
-
-func toChildDrop(drop []int) *protobuf.CHILD_DROP {
-	if len(drop) < 3 {
-		return nil
-	}
-	n := int32(drop[2])
-	return &protobuf.CHILD_DROP{
-		Type:   proto.Uint32(uint32(drop[0])),
-		Id:     proto.Uint32(uint32(drop[1])),
-		Number: proto.Int32(n),
-	}
-}
-
-func applyEducateChildDrop(client *connection.Client, drop *protobuf.CHILD_DROP) error {
-	switch drop.GetType() {
-	case consts.DROP_TYPE_RESOURCE:
-		return client.Commander.AddResource(drop.GetId(), uint32(drop.GetNumber()))
-	case consts.DROP_TYPE_ITEM:
-		return client.Commander.AddItem(drop.GetId(), uint32(drop.GetNumber()))
-	default:
-		return nil
-	}
-}
-
-func applyEducateChildDropTx(ctx context.Context, tx pgx.Tx, client *connection.Client, drop *protobuf.CHILD_DROP) error {
-	switch drop.GetType() {
-	case consts.DROP_TYPE_RESOURCE:
-		return client.Commander.AddResourceTx(ctx, tx, drop.GetId(), uint32(drop.GetNumber()))
-	case consts.DROP_TYPE_ITEM:
-		return client.Commander.AddItemTx(ctx, tx, drop.GetId(), uint32(drop.GetNumber()))
-	default:
-		return nil
-	}
 }
 
 func chooseEducateTargetID(targets map[uint32]educateTargetSetConfig) uint32 {

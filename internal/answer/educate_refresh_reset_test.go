@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestEducateRefreshSuccess(t *testing.T) {
+func TestEducateRefreshUnavailable(t *testing.T) {
 	client := &connection.Client{}
 	payload := protobuf.CS_27047{Type: proto.Uint32(1)}
 	buffer, err := proto.Marshal(&payload)
@@ -22,12 +22,12 @@ func TestEducateRefreshSuccess(t *testing.T) {
 
 	var response protobuf.SC_27048
 	decodePacketAt(t, client, 0, 27048, &response)
-	if response.GetResult() != 0 {
-		t.Fatalf("expected result 0, got %d", response.GetResult())
+	if response.GetResult() != 1 {
+		t.Fatalf("expected unavailable result 1, got %d", response.GetResult())
 	}
 }
 
-func TestEducateResetSuccess(t *testing.T) {
+func TestEducateResetUnavailable(t *testing.T) {
 	client := &connection.Client{}
 	payload := protobuf.CS_27029{Type: proto.Uint32(1)}
 	buffer, err := proto.Marshal(&payload)
@@ -41,8 +41,8 @@ func TestEducateResetSuccess(t *testing.T) {
 
 	var response protobuf.SC_27030
 	decodePacketAt(t, client, 0, 27030, &response)
-	if response.GetResult() != 0 {
-		t.Fatalf("expected result 0, got %d", response.GetResult())
+	if response.GetResult() != 1 {
+		t.Fatalf("expected unavailable result 1, got %d", response.GetResult())
 	}
 }
 

@@ -8,30 +8,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestEducateExecutePlansSuccess(t *testing.T) {
-	client := &connection.Client{}
-	payload := protobuf.CS_27002{Type: proto.Uint32(1)}
-	buffer, err := proto.Marshal(&payload)
-	if err != nil {
-		t.Fatalf("marshal failed: %v", err)
-	}
-
-	if _, _, err := EducateExecutePlans(&buffer, client); err != nil {
-		t.Fatalf("EducateExecutePlans failed: %v", err)
-	}
-
-	var response protobuf.SC_27003
-	decodePacketAt(t, client, 0, 27003, &response)
-	if response.GetResult() != 0 {
-		t.Fatalf("expected result 0, got %d", response.GetResult())
-	}
-	if len(response.GetPlanResults()) != 0 {
-		t.Fatalf("expected empty plan results")
-	}
-	if len(response.GetEvents()) != 0 {
-		t.Fatalf("expected empty events")
-	}
-}
+// Successful persisted weeks are covered by TestRecoveryL02LegacyWeekTransaction
+// with actual configs, commander, protocol frames and a dedicated PostgreSQL schema.
 
 func TestEducateExecutePlansUnsupportedType(t *testing.T) {
 	client := &connection.Client{}
