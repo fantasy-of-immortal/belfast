@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-08",
+  "purpose": "S03 contract evidence and integration with the existing independent official-update plan",
+  "s03_status": "DOING",
+  "part1_status": "DOING_SOURCE_BLOCKED",
+  "interfaces": [
+    {
+      "id": "U01",
+      "transport": "TCP",
+      "endpoint": "line1-login-bili-blhx.bilibiligame.net:80",
+      "request": {"packet": 10800, "state": 59, "platform": "0"},
+      "response": {"packet": 10801, "version_field": 4, "cdn_list_field": 10},
+      "status": "OFFICIAL_READONLY_CAPTURE_VERIFIED",
+      "implementation": "tools/capture_official_update.py; explicit workspace protocol-module dependency",
+      "evidence": "research/educate-recovery/20261008/s03-part1/official-collector-live",
+      "uses_account": false,
+      "activates_config": false
+    },
+    {
+      "id": "U02",
+      "transport": "HTTPS_GET",
+      "endpoint": "{SC_10801.cdn_list}/android/hash/{azhash_token}",
+      "response": "CSV path,size,md5",
+      "status": "OFFICIAL_READONLY_CAPTURE_VERIFIED",
+      "implementation": "tools/capture_official_update.py --manifest",
+      "evidence": "research/educate-recovery/20261008/s03-part1/official-collector-live/hashes.csv",
+      "content_freshness": "token plus manifest digest; version text alone insufficient"
+    },
+    {
+      "id": "U03",
+      "transport": "HTTPS_GET",
+      "endpoint": "{SC_10801.cdn_list}/android/resource/{manifest_md5}",
+      "status": "OFFICIAL_RESOURCE_CAPTURE_SIZE_MD5_VERIFIED",
+      "implementation": "tools/capture_official_update.py --manifest --resource EXACT_PATH",
+      "scope": "selected resource only; existing capture replay and damaged-MD5 rejection validated offline",
+      "evidence": "research/educate-recovery/20261008/s03-part1/official-version-030422/scripts64-report.json",
+      "decoded_config": false,
+      "activates_config": false
+    },
+    {
+      "id": "S03-SUMMARY",
+      "protocol_generation": "new_educate",
+      "request_packet": 29048,
+      "response_packet": 29049,
+      "implementation": "internal/answer/neweducate/new_educate_handlers.go:NewEducateGetExtraDrop",
+      "implementation_commit": "6aaddcb82b785cac6138f96509823e6a34a611c7",
+      "status": "IMPLEMENTED_TESTED_SLICE_NOT_DEPLOYED",
+      "scope": "verified additive trigger3 whole-schedule count talent; numeric drops 1/2",
+      "response_contract": "actual benefit delta and committed resource snapshot; no duplicate reward",
+      "validation": "0-5 course counts, cap +3, incomplete rejection, persistence, delivery failure, retry, role isolation; 23 related tests passed",
+      "full_protocol_recovered": false
+    },
+    {
+      "id": "S03-COUNTER-OBSERVATION",
+      "request_packet": 29001,
+      "response_packet": 29002,
+      "fields": ["tb.res", "tb.benefit", "tb.display", "TBDROPS.display"],
+      "schema": {
+        "TBDISPLAY": ["benefit_display", "dollar_num_display", "counter"],
+        "TBBENEFITVAL": ["buffid", "benefitval.key", "benefitval.value"],
+        "TBBFCHANGE": ["drop_type", "drop_id", "positive_counter", "negative_counter"]
+      },
+      "status": "SCHEMA_AND_MIRROR_CONSUMER_CONFIRMED_NO_OFFICIAL_GAMEPLAY_CAPTURE",
+      "semantics": "types16-19 and num result binding/rounding remain unknown",
+      "source_priority": "official gameplay evidence for results; official decoded assets for current inputs; local mirror explicitly identified"
+    }
+  ],
+  "activation_and_publication": {
+    "player_data_mutated": false,
+    "official_account_used": false,
+    "binary_deployed": false,
+    "raw_official_assets_committed": false,
+    "full_independent_update_pipeline_completed": false
+  }
+}
