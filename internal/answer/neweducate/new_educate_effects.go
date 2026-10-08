@@ -101,6 +101,9 @@ func parseEducateDropTriplets(raw json.RawMessage, category, key, field string) 
 	if err := json.Unmarshal(raw, &rows); err != nil {
 		return nil, fmt.Errorf("%s/%s/%s: %w", category, key, field, err)
 	}
+	if rows == nil {
+		return nil, fmt.Errorf("%s/%s/%s: missing triplets", category, key, field)
+	}
 	for i, row := range rows {
 		if len(row) != 3 || row[0] <= 0 || row[1] <= 0 {
 			return nil, fmt.Errorf("%s/%s/%s[%d]: invalid drop triplet", category, key, field, i)

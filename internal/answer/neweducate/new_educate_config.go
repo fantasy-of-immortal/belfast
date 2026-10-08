@@ -1,6 +1,7 @@
 package neweducate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -302,19 +303,6 @@ func loadCurrentNewEducateRoundConfig(info *protobuf.TBINFO) (*newEducateRoundCo
 	return nil, false, fmt.Errorf("character %d difficulty %d round %d has no configuration", info.GetId(), info.GetDifficulty(), current)
 }
 
-func parseNewEducateUint32List(raw json.RawMessage) ([]uint32, error) {
-	if len(raw) == 0 || string(raw) == `""` || string(raw) == "null" {
-		return []uint32{}, nil
-	}
-
-	var values []uint32
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return nil, err
-	}
-
-	return values, nil
-}
-
 func resolveNewEducateResourceID(state *educateState, resourceType uint32) (uint32, bool, error) {
 	resources, err := listNewEducateConfigs[newEducateResourceConfig](newEducateResourceCategory)
 	if err != nil {
@@ -346,26 +334,12 @@ func removeUint32(values []uint32, target uint32) []uint32 {
 	return filtered
 }
 
-// parseChild2NodeNext resolves a child2_node "next" field to the follow-up
-// node id. Shapes observed in the 9.7.393 dump:
-//
-//	`"3629107"` (string number)  |  3629206 (number)
-//	[3629204,3629207]            (branch list -> take first, deterministic)
-//	[[0,50],[3700807,50]]        (weighted pairs -> take first pair's node)
-func parseNewEducateDropTriplets(raw json.RawMessage) [][]int32 {
-	if len(raw) == 0 {
-		return nil
-	}
-	var triplets [][]int32
-	if err := json.Unmarshal(raw, &triplets); err != nil {
-		return nil
-	}
-	return triplets
-}
-
 func parseEducateFixedNodeNext(raw json.RawMessage) (uint32, error) {
 	var number uint32
-	if err := json.Unmarshal(raw, &number); err == nil && string(raw) != "null" {
+	if string(bytes.TrimSpace(raw)) == "null" || len(bytes.TrimSpace(raw)) == 0 {
+		return 0, fmt.Errorf("fixed successor requires an explicit value")
+	}
+	if err := json.Unmarshal(raw, &number); err == nil {
 		return number, nil
 	}
 	var value string

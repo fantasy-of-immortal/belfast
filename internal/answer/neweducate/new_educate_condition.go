@@ -1,6 +1,7 @@
 package neweducate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -13,6 +14,20 @@ type educateConditionConfig struct {
 	ID    uint32            `json:"id"`
 	Type  uint32            `json:"type"`
 	Param []json.RawMessage `json:"param"`
+}
+
+func decodeEducateConditionParam(params []json.RawMessage, index int, target any) error {
+	if index >= len(params) {
+		return fmt.Errorf("missing param[%d]", index)
+	}
+	raw := bytes.TrimSpace(params[index])
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return fmt.Errorf("param[%d] requires an explicit value", index)
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return fmt.Errorf("param[%d]: %w", index, err)
+	}
+	return nil
 }
 
 func educateCompare(a int64, op string, b int64) (bool, error) {
@@ -44,9 +59,9 @@ func educateKVCount(values []*protobuf.KVDATA, id uint32) int64 {
 // Evaluate every operand before reducing. An unsupported branch must not be
 // concealed by short-circuit evaluation of another branch.
 func evaluateEducateCondition(state *educateState, raw json.RawMessage) (bool, error) {
-	return evaluateEducateConditionDepth(state, raw, 0)
+	return evaluateEducateConditionWithContext(state, raw, nil)
 }
-func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, depth int) (bool, error) {
+func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, depth int, context *educateConditionContext) (bool, error) {
 	if depth > 64 {
 		return false, fmt.Errorf("condition nesting exceeds 64")
 	}
@@ -59,7 +74,7 @@ func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, dep
 		if !ok {
 			return false, fmt.Errorf("%s/%d: missing condition", educateConditionCategory, id)
 		}
-		result, err := evaluateEducateConditionConfig(state, config)
+		result, err := evaluateEducateConditionConfig(state, config, context)
 		if err != nil {
 			return false, fmt.Errorf("%s/%d/param: %w", educateConditionCategory, id, err)
 		}
@@ -82,7 +97,7 @@ func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, dep
 	}
 	result := op == "&&"
 	for _, term := range terms {
-		value, err := evaluateEducateConditionDepth(state, term, depth+1)
+		value, err := evaluateEducateConditionDepth(state, term, depth+1, context)
 		if err != nil {
 			return false, err
 		}
@@ -94,13 +109,10 @@ func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, dep
 	}
 	return result, nil
 }
-func evaluateEducateConditionConfig(state *educateState, c *educateConditionConfig) (bool, error) {
+func evaluateEducateConditionConfig(state *educateState, c *educateConditionConfig, context *educateConditionContext) (bool, error) {
 	p := c.Param
 	decode := func(index int, target any) error {
-		if index >= len(p) {
-			return fmt.Errorf("missing param[%d]", index)
-		}
-		return json.Unmarshal(p[index], target)
+		return decodeEducateConditionParam(p, index, target)
 	}
 	var value int64
 	var op string
@@ -192,7 +204,7 @@ func evaluateEducateConditionConfig(state *educateState, c *educateConditionConf
 			return false, err
 		}
 	default:
-		return false, fmt.Errorf("unsupported condition type %d; server semantics need evidence", c.Type)
+		return evaluateEducateContextCondition(state, c, context)
 	}
 	return educateCompare(value, op, threshold)
 }

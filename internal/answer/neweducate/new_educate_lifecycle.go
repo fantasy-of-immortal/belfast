@@ -74,12 +74,13 @@ type educateStage struct {
 	Completed bool `json:"completed"`
 }
 type educateLifecycle struct {
-	Version   int                      `json:"version"`
-	Round     uint32                   `json:"round"`
-	TempRound uint32                   `json:"temp_round"`
-	Stages    map[uint32]educateStage  `json:"stages"`
-	Schedule  *educateScheduleProgress `json:"schedule,omitempty"`
-	Chain     *educateNodeChain        `json:"chain,omitempty"`
+	Version        int                      `json:"version"`
+	Round          uint32                   `json:"round"`
+	TempRound      uint32                   `json:"temp_round"`
+	Stages         map[uint32]educateStage  `json:"stages"`
+	Schedule       *educateScheduleProgress `json:"schedule,omitempty"`
+	Chain          *educateNodeChain        `json:"chain,omitempty"`
+	ConditionDraws map[string]uint32        `json:"condition_draws,omitempty"`
 }
 
 type educateCourseProgress struct {
