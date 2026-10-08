@@ -29,7 +29,8 @@ type educateBenefitConfig struct {
 	Effect    [][]json.RawMessage `json:"effect"`
 }
 
-// Restored numeric talent triggers: acquisition (13), course settlement (2) and round start (5),
+// Restored numeric talent triggers: acquisition (13), course settlement (2),
+// completed schedule (3), and round start (5),
 // identified by real talent descriptions and benefit rows.
 func educateNumericTalentBenefits(state *educateState, id uint32) ([]*educateBenefitConfig, error) {
 	list, ok, err := loadNewEducateConfigByID[educateBenefitListConfig]("ShareCfg/child2_benefit_list.json", id)
@@ -45,7 +46,7 @@ func educateNumericTalentBenefits(state *educateState, id uint32) ([]*educateBen
 		if err != nil {
 			return nil, err
 		}
-		if !ok || (b.Trigger != 5 && b.Trigger != 2 && b.Trigger != 13) {
+		if !ok || (b.Trigger != 5 && b.Trigger != 2 && b.Trigger != 3 && b.Trigger != 13) {
 			return nil, fmt.Errorf("talent %d benefit %d trigger requires recovery", id, benefitID)
 		}
 		// Course condition context (e.g. ${num}) is not yet restored. Only
@@ -53,7 +54,13 @@ func educateNumericTalentBenefits(state *educateState, id uint32) ([]*educateBen
 		if (b.Trigger == 2 || b.Trigger == 13) && string(b.Condition) != "[]" {
 			return nil, fmt.Errorf("talent %d course condition requires recovery", id)
 		}
-		if _, err := evaluateEducateCondition(state, b.Condition); err != nil {
+		var conditionContext *educateConditionContext
+		if b.Trigger == 3 {
+			// Syntax/ownership validation before the schedule exists. This is
+			// not an execution snapshot; the boolean result is discarded.
+			conditionContext = &educateConditionContext{Plans: []uint32{}}
+		}
+		if _, err := evaluateEducateConditionWithContext(state, b.Condition, conditionContext); err != nil {
 			return nil, err
 		}
 		for _, effect := range b.Effect {
@@ -90,6 +97,10 @@ func applyEducateTalentTrigger(state *educateState, trigger uint32) (*protobuf.T
 }
 
 func applyEducateTalentTriggerFor(state *educateState, trigger uint32, acquiredID uint32) (*protobuf.TBDROPS, error) {
+	return applyEducateTalentTriggerWithContext(state, trigger, acquiredID, nil)
+}
+
+func applyEducateTalentTriggerWithContext(state *educateState, trigger uint32, acquiredID uint32, conditionContext *educateConditionContext) (*protobuf.TBDROPS, error) {
 	drops := emptyTBDrops()
 	for _, active := range state.Info.Benefit.GetActives() {
 		if acquiredID != 0 && active.GetId() != acquiredID {
@@ -106,7 +117,7 @@ func applyEducateTalentTriggerFor(state *educateState, trigger uint32, acquiredI
 			if b.Trigger != trigger {
 				continue
 			}
-			matched, err := evaluateEducateCondition(state, b.Condition)
+			matched, err := evaluateEducateConditionWithContext(state, b.Condition, conditionContext)
 			if err != nil {
 				return nil, err
 			}

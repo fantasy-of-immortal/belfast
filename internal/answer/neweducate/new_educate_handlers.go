@@ -501,7 +501,12 @@ func NewEducateGetExtraDrop(buffer *[]byte, client *connection.Client) (int, int
 	if state.Lifecycle.Schedule != nil && state.Lifecycle.Schedule.SummaryComplete {
 		return client.SendMessage(29049, &protobuf.SC_29049{Result: proto.Uint32(0), Drop: emptyTBDrops(), Res: state.Info.Res})
 	}
+	drops := emptyTBDrops()
 	state, err = updateEducateState(client, payload.GetId(), func(state *educateState) error {
+		// A concurrent retry may have completed the summary since the load.
+		if state.Lifecycle.Schedule != nil && state.Lifecycle.Schedule.SummaryComplete {
+			return nil
+		}
 		if state.Info.Fsm.GetSystemNo() != newEducateSystemPlan || educateHasPending(state.Info) {
 			return errEducatePhase
 		}
@@ -520,6 +525,15 @@ func NewEducateGetExtraDrop(buffer *[]byte, client *connection.Client) (int, int
 		if err := validateEducateNumericActives(state); err != nil {
 			return err
 		}
+		plans := make([]uint32, 0, len(ensureEducateCache(state.Info).CachePlan[0].Plans))
+		for _, plan := range ensureEducateCache(state.Info).CachePlan[0].Plans {
+			plans = append(plans, plan.GetValue())
+		}
+		drops, err = applyEducateTalentTriggerWithContext(state, 3, 0, &educateConditionContext{Plans: plans})
+		if err != nil {
+			return err
+		}
+		progress.Extra = drops.BenefitDrop
 		progress.ExtraComplete = true
 		progress.SummaryComplete = true
 		markEducateStage(state, newEducateSystemPlan, true)
@@ -529,7 +543,7 @@ func NewEducateGetExtraDrop(buffer *[]byte, client *connection.Client) (int, int
 		logEducateFailure(client, payload.GetId(), 29048, err)
 		return client.SendMessage(29049, &protobuf.SC_29049{Result: proto.Uint32(1), Drop: emptyTBDrops(), Res: &protobuf.TBRES{}})
 	}
-	return client.SendMessage(29049, &protobuf.SC_29049{Result: proto.Uint32(0), Drop: emptyTBDrops(), Res: state.Info.Res})
+	return client.SendMessage(29049, &protobuf.SC_29049{Result: proto.Uint32(0), Drop: drops, Res: state.Info.Res})
 }
 
 func NewEducateGetMap(buffer *[]byte, client *connection.Client) (int, int, error) {
