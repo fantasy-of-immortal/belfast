@@ -210,12 +210,33 @@ def audit(source):
             "boundary": "Not a proof of private server behavior or a newer official asset corpus."}
 
 
+def attach_source_report(report, path):
+    raw = path.read_bytes()
+    provenance = json.loads(raw.decode("utf-8-sig"))
+    if (provenance.get("status") != "validated"
+            or provenance.get("source_kind") != "official_resource_plus_local_apk_metadata"
+            or provenance.get("snapshot_sha256") != report["source_sha256"]):
+        raise ValueError("official source report does not validate this exact snapshot")
+    report["source_kind"] = "official_decoded_snapshot; input hash matches validated restoration report"
+    report["source_provenance"] = {
+        "report_sha256": hashlib.sha256(raw).hexdigest(),
+        "resource_sha256": provenance["resource_sha256"],
+        "metadata_sha256": provenance["metadata_sha256"],
+        "decoder_sha256": provenance["decoder_sha256"],
+        "versions": provenance["versions"],
+        "private_server_semantics_proved": False,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config-jsonl", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--source-report", type=Path, help="Optional validated restoration report for this exact input")
     args = parser.parse_args()
     report = audit(args.config_jsonl)
+    if args.source_report:
+        attach_source_report(report, args.source_report)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: report[k] for k in ("source_sha256", "reachability_model_closed",

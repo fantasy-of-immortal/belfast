@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-09",
+  "extends": "s03-interface-register-20261008.json",
+  "s03_status": "DOING",
+  "part1_status": "DOING_PRIVATE_SEMANTICS_SOURCE_BLOCKED",
+  "latest_official_config_source_blocked": false,
+  "interfaces": [
+    {
+      "id": "U04",
+      "implementation": "tools/restore_official_educate.py",
+      "inputs": ["recorded official manifest/report", "official scripts32", "local APK metadata", "explicit local decoder components"],
+      "status": "OFFICIAL_9_7_395_CHILD2_RESTORATION_VERIFIED",
+      "scope": "21 child2 tables, 17626 rows; declared IDs and core fields validated",
+      "comparison": "zero differences after CRLF/LF normalization; zero added/removed IDs",
+      "architecture": "scripts32 bytecode chain verified; scripts64 container verified but bcdec rejects its FR2 bytecode",
+      "evidence": "research/educate-recovery/20261009/reproducible-pipeline/report.json",
+      "data_source": "official CDN resource, not GitHub configuration data",
+      "tool_dependency": "local reviewed algorithms/binaries, separately hashed; not distributed here",
+      "network_required_during_restoration": false,
+      "configuration_imported": false,
+      "full_update_pipeline_completed": false
+    },
+    {
+      "id": "U05",
+      "implementation": "tools/educate_condition_audit.py --source-report",
+      "status": "OFFICIAL_SNAPSHOT_REACHABILITY_MODEL_VERIFIED",
+      "scope": "current complete official snapshot; 1311 list roots plus conservative effects",
+      "source_contract": "input SHA must match validated official restoration report",
+      "result": "four type7/9 conditions unreachable in current conservative config model",
+      "private_server_behavior_proved": false,
+      "evidence": "research/educate-recovery/20261009/official-provenance-condition-reachability.json"
+    }
+  ],
+  "validation": {
+    "quality_and_reachability_tests": "6 passed, 0.021s",
+    "actual_pipeline_reproduction": "passed: 21 tables, 17626 rows",
+    "go_gameplay_changed": false,
+    "go_regression_repeated": false,
+    "player_database_written": false,
+    "binary_deployed": false,
+    "official_account_used": false
+  },
+  "remaining_contracts": "Types16-19 and num binding/rounding/windows require gameplay results; user has local client and official update assets only."
+}

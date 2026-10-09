@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from educate_condition_audit import audit, PREFIX, CONDITION, BENEFIT, LIST
+from educate_condition_audit import audit, attach_source_report, PREFIX, CONDITION, BENEFIT, LIST
 
 
 class ReachabilityEvidenceTests(unittest.TestCase):
@@ -45,6 +45,22 @@ class ReachabilityEvidenceTests(unittest.TestCase):
         self.assertFalse(result["reachability_model_closed"])
         self.assertEqual(result["expression_errors"][0]["category"], BENEFIT)
         self.assertEqual(result["expression_errors"][0]["field"], "condition")
+
+    def test_official_source_claim_requires_the_exact_restored_input(self):
+        result = self.snapshot()
+        provenance = {"status": "validated", "source_kind": "official_resource_plus_local_apk_metadata",
+                      "snapshot_sha256": result["source_sha256"], "resource_sha256": "synthetic-resource",
+                      "metadata_sha256": "synthetic-metadata", "decoder_sha256": {}, "versions": []}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            path.write_text(json.dumps(provenance), encoding="utf-8")
+            attach_source_report(result, path)
+            self.assertIn("official_decoded_snapshot", result["source_kind"])
+            self.assertFalse(result["source_provenance"]["private_server_semantics_proved"])
+            for changes in ({"snapshot_sha256": "different-input"}, {"status": "error"}):
+                path.write_text(json.dumps({**provenance, **changes}), encoding="utf-8")
+                with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, "exact snapshot"):
+                    attach_source_report(result, path)
 
 
 if __name__ == "__main__":
