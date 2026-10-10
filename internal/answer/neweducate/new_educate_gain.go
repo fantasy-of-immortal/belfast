@@ -35,6 +35,11 @@ func applyEducateGainBatch(state *educateState, rows [][]int32, multiplier uint3
 			if benefit.Trigger != 1 && benefit.Trigger != 19 && (benefit.Trigger != 2 || context == nil || context.Slot == 0) {
 				continue
 			}
+			// Payment discounts are a passive fee contract, not gain modifiers.
+			// Skip fee-only rows before evaluating their course-slot conditions.
+			if educateBenefitOnlyPlanDiscount(benefit) {
+				continue
+			}
 			// Numeric-change passive modifiers are evaluated against their held
 			// ledger at award time. One-off change rewards use trigger 19 instead.
 			if benefit.Trigger == 19 {
@@ -66,7 +71,7 @@ func applyEducateGainBatch(state *educateState, rows [][]int32, multiplier uint3
 				if err := json.Unmarshal(effect[0], &kind); err != nil {
 					return nil, err
 				}
-				if kind == 1 || kind == 2 || kind == 28 {
+				if kind == 1 || kind == 2 || kind == 28 || (kind == 22 && benefit.Trigger == 2) {
 					continue
 				}
 				if kind != 3 && kind != 4 {

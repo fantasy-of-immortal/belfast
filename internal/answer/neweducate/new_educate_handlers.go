@@ -211,14 +211,20 @@ func currentNewEducatePlanConfig(state *educateState) (*newEducatePlanConfig, bo
 // newEducateResultDrops converts child2_plan result_display (or a generic
 // [[type,id,number], ...]) into a TBDROPS worth of base drops.
 func newEducateResultDrops(state *educateState, triplets [][]int32, planID, slot uint32) (*protobuf.TBDROPS, error) {
+	plans := []uint32{}
+	for _, kv := range ensureEducateCache(state.Info).CachePlan[0].Plans {
+		plans = append(plans, kv.GetValue())
+	}
 	context := educateChangeContext(state, educateActionID(state, fmt.Sprintf("course:%d", slot)), 0, nil)
 	context.PlanID, context.Slot = planID, slot
+	context.Plans = plans
 	actual, err := applyEducateDropBatch(state, triplets, 1, context)
 	if err != nil {
 		return nil, err
 	}
 	context = educateChangeContext(state, context.ExecutionID, 0, actual)
 	context.PlanID, context.Slot = planID, slot
+	context.Plans = plans
 	benefits, err := applyEducateTalentTriggerWithContext(state, 2, 0, context)
 	if err != nil {
 		return nil, err
@@ -259,6 +265,13 @@ func NewEducateTriggerNode(buffer *[]byte, client *connection.Client) (int, int,
 		if course == nil || course.Status != "playing" || course.Node != current {
 			return fmt.Errorf("course/node instance mismatch")
 		}
+		if len(state.Info.Fsm.PriorityFsm) > 0 || len(state.Info.Fsm.TarotSelects) > 0 {
+			return errEducatePhase
+		}
+		contract, err := educateCourseContractFor(state, course)
+		if err != nil {
+			return err
+		}
 		if current == 0 || payload.GetBranch() != 0 {
 			return fmt.Errorf("no active fixed course node or invalid branch")
 		}
@@ -297,11 +310,7 @@ func NewEducateTriggerNode(buffer *[]byte, client *connection.Client) (int, int,
 			if !ok {
 				return fmt.Errorf("missing active course")
 			}
-			rows, err := parseEducateDropTriplets(plan.ResultDisplay, newEducatePlanCategory, fmt.Sprint(plan.ID), "result_display")
-			if err != nil {
-				return err
-			}
-			response.Drop, err = newEducateResultDrops(state, rows, plan.ID, ensureEducateCache(state.Info).CachePlan[0].GetCurIndex())
+			response.Drop, err = newEducateResultDrops(state, contract.Rewards, plan.ID, ensureEducateCache(state.Info).CachePlan[0].GetCurIndex())
 			if err != nil {
 				return err
 			}
@@ -387,6 +396,9 @@ func NewEducateNextPlan(buffer *[]byte, client *connection.Client) (int, int, er
 		if course == nil || course.Status != "pending" {
 			return fmt.Errorf("next course is not pending")
 		}
+		if _, err := educateCourseContractFor(state, course); err != nil {
+			return err
+		}
 		cache.CurIndex = proto.Uint32(cache.GetCurIndex() + 1)
 		plan, ok, err := currentNewEducatePlanConfig(state)
 		if err != nil {
@@ -463,18 +475,11 @@ func NewEducateScheduleSkip(buffer *[]byte, client *connection.Client) (int, int
 			if course == nil || course.Status == "settled" {
 				return fmt.Errorf("remaining slot %d already settled", kv.GetKey())
 			}
-			plan, ok, err := loadNewEducateConfigByID[newEducatePlanConfig](newEducatePlanCategory, kv.GetValue())
+			contract, err := educateCourseContractFor(state, course)
 			if err != nil {
 				return err
 			}
-			if !ok {
-				return fmt.Errorf("missing course %d", kv.GetValue())
-			}
-			rows, err := parseEducateDropTriplets(plan.ResultDisplay, newEducatePlanCategory, fmt.Sprint(plan.ID), "result_display")
-			if err != nil {
-				return err
-			}
-			drops, err := newEducateResultDrops(state, rows, plan.ID, kv.GetKey())
+			drops, err := newEducateResultDrops(state, contract.Rewards, course.PlanID, kv.GetKey())
 			if err != nil {
 				return err
 			}
@@ -484,6 +489,9 @@ func NewEducateScheduleSkip(buffer *[]byte, client *connection.Client) (int, int
 			course.BenefitRewards = drops.BenefitDrop
 			response.Drop.BaseDrop = append(response.Drop.BaseDrop, drops.BaseDrop...)
 			response.Drop.BenefitDrop = append(response.Drop.BenefitDrop, drops.BenefitDrop...)
+			if kv.GetKey() < uint32(len(cache.Plans)) && (len(state.Info.Fsm.PriorityFsm) > 0 || len(state.Info.Fsm.TarotSelects) > 0) {
+				return fmt.Errorf("course skip requires an intervening choice")
+			}
 		}
 		cache.CurIndex = proto.Uint32(uint32(len(cache.Plans)))
 		state.Info.Fsm.CurrentNode = proto.Uint32(0)
@@ -514,7 +522,7 @@ func NewEducateGetExtraDrop(buffer *[]byte, client *connection.Client) (int, int
 	state, err = updateEducateState(client, payload.GetId(), func(state *educateState) error {
 		// A concurrent retry may have completed the summary since the load.
 		if state.Lifecycle.Schedule != nil && state.Lifecycle.Schedule.SummaryComplete {
-			return nil
+			return errEducateNoChange
 		}
 		if state.Info.Fsm.GetSystemNo() != newEducateSystemPlan || educateHasPending(state.Info) {
 			return errEducatePhase

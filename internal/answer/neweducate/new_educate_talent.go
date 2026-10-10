@@ -15,11 +15,12 @@ type educateTalentWeight struct {
 	Weight uint64
 }
 type educateBenefitListConfig struct {
-	ID        uint32   `json:"id"`
-	Character uint32   `json:"character"`
-	Type      uint32   `json:"type"`
-	Content   []uint32 `json:"content"`
-	Duration  int32    `json:"during_time"`
+	ID          uint32   `json:"id"`
+	Character   uint32   `json:"character"`
+	Type        uint32   `json:"type"`
+	Content     []uint32 `json:"content"`
+	ShowContent []uint32 `json:"show_content"`
+	Duration    int32    `json:"during_time"`
 }
 
 type educateBenefitConfig struct {
@@ -66,6 +67,12 @@ func educateNumericTalentBenefits(state *educateState, id uint32) ([]*educateBen
 		for _, effect := range b.Effect {
 			var kind uint32
 			var row []int32
+			if len(effect) == 2 && json.Unmarshal(effect[0], &kind) == nil && kind == 22 && b.Trigger == 2 {
+				if _, err := validateEducatePlanDiscount(state, effect); err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if len(effect) != 2 || json.Unmarshal(effect[0], &kind) != nil || (kind != 1 && kind != 3 && kind != 4) || json.Unmarshal(effect[1], &row) != nil || len(row) != 3 || (row[0] != 1 && row[0] != 2) {
 				return nil, fmt.Errorf("talent %d benefit %d effect requires recovery", id, benefitID)
 			}
@@ -143,6 +150,9 @@ func applyEducateTalentTriggerForActives(state *educateState, trigger uint32, ac
 			if b.Trigger != trigger {
 				continue
 			}
+			if educateBenefitOnlyPlanDiscount(b) {
+				continue
+			}
 			if trigger == 19 {
 				imperative := false
 				for _, effect := range b.Effect {
@@ -195,6 +205,12 @@ func applyEducateTalentTriggerForActives(state *educateState, trigger uint32, ac
 				}
 				if err := json.Unmarshal(effect[0], &kind); err != nil {
 					return nil, err
+				}
+				if kind == 22 && trigger == 2 {
+					if _, err := validateEducatePlanDiscount(state, effect); err != nil {
+						return nil, err
+					}
+					continue // Already applied once at schedule payment.
 				}
 				if kind == 3 || kind == 4 {
 					if trigger != 1 && trigger != 2 && trigger != 19 {

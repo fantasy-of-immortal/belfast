@@ -12,6 +12,7 @@ import (
 )
 
 var errEducatePhase = errors.New("educate action is not legal in this phase")
+var errEducateNoChange = errors.New("educate action already committed")
 
 func logEducateFailure(client *connection.Client, id uint32, packet uint32, err error) {
 	commander := uint32(0)
@@ -49,6 +50,9 @@ func updateEducateState(client *connection.Client, id uint32, action func(*educa
 			return err
 		}
 		if err := action(state); err != nil {
+			if errors.Is(err, errEducateNoChange) {
+				result = state
+			}
 			return err
 		}
 		// Keep the decoded protobuf pointer used by the transaction, including reset.
@@ -61,7 +65,7 @@ func updateEducateState(client *connection.Client, id uint32, action func(*educa
 		result = state
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errEducateNoChange) {
 		return nil, err
 	}
 	return result, nil
@@ -96,6 +100,8 @@ type educateCourseProgress struct {
 	Rewards        []*protobuf.TBDROP `json:"rewards,omitempty"`
 	BenefitRewards []*protobuf.TBDROP `json:"benefit_rewards,omitempty"`
 	Restarts       uint32             `json:"restarts,omitempty"`
+	Contract       string             `json:"contract,omitempty"`
+	PaidCosts      [][]int32          `json:"paid_costs,omitempty"`
 }
 type educateScheduleProgress struct {
 	Version         int64                             `json:"version"`

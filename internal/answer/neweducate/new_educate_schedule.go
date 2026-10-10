@@ -3,7 +3,6 @@ package neweducate
 import (
 	"fmt"
 	"sort"
-	"strconv"
 
 	"github.com/ggmolly/belfast/internal/protobuf"
 	"google.golang.org/protobuf/proto"
@@ -30,50 +29,8 @@ func restartEducateCurrentCourse(state *educateState) error {
 	if cur == 0 || course == nil || course.Status != "playing" || course.Node != state.Info.Fsm.GetCurrentNode() || len(course.Rewards) > 0 {
 		return fmt.Errorf("course restart requires an unsettled matching instance")
 	}
-	plan, ok, err := currentNewEducatePlanConfig(state)
-	if err != nil {
+	if _, err := educateCourseContractFor(state, course); err != nil {
 		return err
-	}
-	if !ok {
-		return fmt.Errorf("restart missing current course")
-	}
-	seen := map[uint32]bool{}
-	id := plan.ResultNode
-	found := false
-	terminal := false
-	for step := 0; step < 256; step++ {
-		if id == 0 || seen[id] {
-			return fmt.Errorf("course %d restart invalid/cyclic chain at %d", plan.ID, id)
-		}
-		seen[id] = true
-		node, ok, err := loadNewEducateConfigByID[newEducateNodeConfig](newEducateNodeCategory, id)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("course restart missing node %d", id)
-		}
-		if id == course.Node {
-			found = true
-		}
-		if node.NextType != 1 {
-			return fmt.Errorf("course restart needs linear next at %d", id)
-		}
-		next, err := resolveEducateNodeNext(node, 0, nil)
-		if err != nil {
-			return err
-		}
-		if node.Type == 102 && node.DropTypeClient == 1 && next == 0 {
-			terminal = true
-			break
-		}
-		if node.Type != 1 || node.DropTypeClient != 0 || next == 0 {
-			return fmt.Errorf("course restart unsupported effect at %d", id)
-		}
-		id = next
-	}
-	if !found || !terminal {
-		return fmt.Errorf("course restart current node unreachable or step limit exceeded")
 	}
 	if course.Restarts == ^uint32(0) {
 		return fmt.Errorf("course restart counter overflow")
@@ -145,6 +102,7 @@ func scheduleEducatePlans(state *educateState, requested []*protobuf.KVDATA) err
 		return err
 	}
 	sorted := make([]*protobuf.KVDATA, 0, len(requested))
+	progress := &educateScheduleProgress{Version: state.Entry.Revision + 1, Slots: map[uint32]*educateCourseProgress{}}
 	seen := map[uint32]bool{}
 	costs := [][]int32{}
 	for _, kv := range requested {
@@ -157,11 +115,16 @@ func scheduleEducatePlans(state *educateState, requested []*protobuf.KVDATA) err
 		if !ok {
 			return fmt.Errorf("course %d unavailable for character %d round %d", kv.GetValue(), state.Info.GetId(), round.ID)
 		}
-		rows, err := parseEducateDropTriplets(plan.Cost, newEducatePlanCategory, strconv.FormatUint(uint64(plan.ID), 10), "cost")
+		contract, err := loadEducateCourseContract(state, &plan)
+		if err != nil {
+			return err
+		}
+		rows, err := educateCourseCosts(state, plan.ID, contract.Costs)
 		if err != nil {
 			return err
 		}
 		costs = append(costs, rows...)
+		progress.Slots[key] = &educateCourseProgress{PlanID: plan.ID, Status: "pending", Contract: contract.Digest, PaidCosts: rows}
 		sorted = append(sorted, proto.Clone(kv).(*protobuf.KVDATA))
 	}
 	if _, err := applyEducateNumericBatch(state, costs, 1, true); err != nil {
@@ -171,10 +134,6 @@ func scheduleEducatePlans(state *educateState, requested []*protobuf.KVDATA) err
 	cache := ensureEducateCache(state.Info)
 	cache.CachePlan[0].Plans = sorted
 	cache.CachePlan[0].CurIndex = proto.Uint32(0)
-	progress := &educateScheduleProgress{Version: state.Entry.Revision + 1, Slots: map[uint32]*educateCourseProgress{}}
-	for _, kv := range sorted {
-		progress.Slots[kv.GetKey()] = &educateCourseProgress{PlanID: kv.GetValue(), Status: "pending"}
-	}
 	state.Lifecycle.Schedule = progress
 	state.Info.Fsm.SystemNo = proto.Uint32(newEducateSystemPlan)
 	markEducateStage(state, newEducateSystemPlan, false)
@@ -183,6 +142,14 @@ func scheduleEducatePlans(state *educateState, requested []*protobuf.KVDATA) err
 
 func educateScheduleProgressFor(state *educateState) (*educateScheduleProgress, error) {
 	cache := ensureEducateCache(state.Info).CachePlan[0]
+	if len(cache.Plans) == 0 || cache.GetCurIndex() > uint32(len(cache.Plans)) {
+		return nil, fmt.Errorf("invalid schedule size/cursor")
+	}
+	for i, kv := range cache.Plans {
+		if kv.GetKey() != uint32(i+1) {
+			return nil, fmt.Errorf("schedule slots must be contiguous and ordered")
+		}
+	}
 	progress := state.Lifecycle.Schedule
 	if progress == nil {
 		// Compatibility is limited to the old linear course convention: completed
@@ -210,6 +177,21 @@ func educateScheduleProgressFor(state *educateState) (*educateScheduleProgress, 
 		if slot == nil || slot.PlanID != kv.GetValue() || (slot.Status != "pending" && slot.Status != "playing" && slot.Status != "settled") {
 			return nil, fmt.Errorf("invalid course progress slot %d", kv.GetKey())
 		}
+		key, cur, current := kv.GetKey(), cache.GetCurIndex(), state.Info.Fsm.GetCurrentNode()
+		if key > cur && (slot.Status != "pending" || slot.Node != 0 || len(slot.Rewards) != 0 || len(slot.BenefitRewards) != 0) {
+			return nil, fmt.Errorf("future course %d already started", key)
+		}
+		if key < cur || (key == cur && current == 0) {
+			if slot.Status != "settled" || slot.Node != 0 {
+				return nil, fmt.Errorf("past course %d unsettled", key)
+			}
+		}
+		if key == cur && current != 0 && (slot.Status != "playing" || slot.Node != current || len(slot.Rewards) != 0 || len(slot.BenefitRewards) != 0) {
+			return nil, fmt.Errorf("active course %d node/reward mismatch", key)
+		}
+	}
+	if cache.GetCurIndex() == 0 && state.Info.Fsm.GetCurrentNode() != 0 {
+		return nil, fmt.Errorf("course node without cursor")
 	}
 	return progress, nil
 }

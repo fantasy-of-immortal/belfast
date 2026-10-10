@@ -1,0 +1,727 @@
+{
+  "scope": "restored 9.7.395 course configurations",
+  "sha256": {
+    "child2_plan.json": "3d08452b288fdf1a28bf588e0c733c68d611a8347b84aeb4f924a7c8ebfaebbb",
+    "child2_node.json": "c78fcc765982d43406fd4278631d083ad574148c88cef5d916fb3022bc12234b",
+    "child2_round.json": "47850326558f6bbdf789f5e2c16a030cbe29a708fc248467ff790f53387bb99d",
+    "child2_resource.json": "63fe26073b1944eb6e778fd67c7dcfd209832284d85017c20372a72e4cf97aff",
+    "child2_attr.json": "b30aca70cadfe5926c45c35d46bc5ae996df8ac0dfcc03b1ae806883c1af5741",
+    "child2_benefit.json": "14bdeb0c8ad02c0052746eea089b3f41bac26f906377321b5fc802b865d27cff",
+    "child2_benefit_list.json": "736f0b27efce2aaa56520fd4415c6e9ad2ca14c842d085d7d12e3399fc4ce1a7"
+  },
+  "course_count": 70,
+  "chain_lengths": {
+    "2": 70
+  },
+  "round_count": 80,
+  "modes": {
+    "role1/hard0/type1": 20,
+    "role2/hard0/type1": 20,
+    "role2/hard0/type2": 10,
+    "role2/hard1/type1": 20,
+    "role2/hard1/type2": 10
+  },
+  "owned_extra_plan_buffs": [],
+  "courses": [
+    {
+      "id": 1101,
+      "owner": 1,
+      "group": 1,
+      "level": 1,
+      "nodes": [
+        20001,
+        20002
+      ]
+    },
+    {
+      "id": 1102,
+      "owner": 1,
+      "group": 2,
+      "level": 1,
+      "nodes": [
+        20003,
+        20004
+      ]
+    },
+    {
+      "id": 1103,
+      "owner": 1,
+      "group": 3,
+      "level": 1,
+      "nodes": [
+        20005,
+        20006
+      ]
+    },
+    {
+      "id": 1104,
+      "owner": 1,
+      "group": 4,
+      "level": 1,
+      "nodes": [
+        20007,
+        20008
+      ]
+    },
+    {
+      "id": 1105,
+      "owner": 1,
+      "group": 5,
+      "level": 1,
+      "nodes": [
+        20009,
+        20010
+      ]
+    },
+    {
+      "id": 1106,
+      "owner": 1,
+      "group": 6,
+      "level": 1,
+      "nodes": [
+        20011,
+        20012
+      ]
+    },
+    {
+      "id": 1107,
+      "owner": 1,
+      "group": 7,
+      "level": 1,
+      "nodes": [
+        20013,
+        20014
+      ]
+    },
+    {
+      "id": 1108,
+      "owner": 1,
+      "group": 7,
+      "level": 2,
+      "nodes": [
+        20015,
+        20016
+      ]
+    },
+    {
+      "id": 1109,
+      "owner": 1,
+      "group": 7,
+      "level": 3,
+      "nodes": [
+        20017,
+        20018
+      ]
+    },
+    {
+      "id": 1110,
+      "owner": 1,
+      "group": 8,
+      "level": 1,
+      "nodes": [
+        20019,
+        20020
+      ]
+    },
+    {
+      "id": 1111,
+      "owner": 1,
+      "group": 8,
+      "level": 2,
+      "nodes": [
+        20021,
+        20022
+      ]
+    },
+    {
+      "id": 1112,
+      "owner": 1,
+      "group": 8,
+      "level": 3,
+      "nodes": [
+        20023,
+        20024
+      ]
+    },
+    {
+      "id": 1113,
+      "owner": 1,
+      "group": 9,
+      "level": 1,
+      "nodes": [
+        20025,
+        20026
+      ]
+    },
+    {
+      "id": 1114,
+      "owner": 1,
+      "group": 9,
+      "level": 2,
+      "nodes": [
+        20027,
+        20028
+      ]
+    },
+    {
+      "id": 1115,
+      "owner": 1,
+      "group": 9,
+      "level": 3,
+      "nodes": [
+        20029,
+        20030
+      ]
+    },
+    {
+      "id": 1116,
+      "owner": 1,
+      "group": 10,
+      "level": 1,
+      "nodes": [
+        20031,
+        20032
+      ]
+    },
+    {
+      "id": 1117,
+      "owner": 1,
+      "group": 10,
+      "level": 2,
+      "nodes": [
+        20033,
+        20034
+      ]
+    },
+    {
+      "id": 1118,
+      "owner": 1,
+      "group": 10,
+      "level": 3,
+      "nodes": [
+        20035,
+        20036
+      ]
+    },
+    {
+      "id": 1119,
+      "owner": 1,
+      "group": 11,
+      "level": 1,
+      "nodes": [
+        20037,
+        20038
+      ]
+    },
+    {
+      "id": 1122,
+      "owner": 1,
+      "group": 12,
+      "level": 1,
+      "nodes": [
+        20039,
+        20040
+      ]
+    },
+    {
+      "id": 1201,
+      "owner": 2,
+      "group": 101,
+      "level": 1,
+      "nodes": [
+        3700001,
+        3700002
+      ]
+    },
+    {
+      "id": 1202,
+      "owner": 2,
+      "group": 102,
+      "level": 1,
+      "nodes": [
+        3700003,
+        3700004
+      ]
+    },
+    {
+      "id": 1203,
+      "owner": 2,
+      "group": 103,
+      "level": 1,
+      "nodes": [
+        3700005,
+        3700006
+      ]
+    },
+    {
+      "id": 1204,
+      "owner": 2,
+      "group": 104,
+      "level": 1,
+      "nodes": [
+        3700007,
+        3700008
+      ]
+    },
+    {
+      "id": 1205,
+      "owner": 2,
+      "group": 105,
+      "level": 1,
+      "nodes": [
+        3700009,
+        3700010
+      ]
+    },
+    {
+      "id": 1206,
+      "owner": 2,
+      "group": 106,
+      "level": 1,
+      "nodes": [
+        3700011,
+        3700012
+      ]
+    },
+    {
+      "id": 1207,
+      "owner": 2,
+      "group": 107,
+      "level": 1,
+      "nodes": [
+        3700013,
+        3700014
+      ]
+    },
+    {
+      "id": 1208,
+      "owner": 2,
+      "group": 107,
+      "level": 2,
+      "nodes": [
+        3700015,
+        3700016
+      ]
+    },
+    {
+      "id": 1209,
+      "owner": 2,
+      "group": 107,
+      "level": 3,
+      "nodes": [
+        3700017,
+        3700018
+      ]
+    },
+    {
+      "id": 1210,
+      "owner": 2,
+      "group": 108,
+      "level": 1,
+      "nodes": [
+        3700019,
+        3700020
+      ]
+    },
+    {
+      "id": 1211,
+      "owner": 2,
+      "group": 108,
+      "level": 2,
+      "nodes": [
+        3700021,
+        3700022
+      ]
+    },
+    {
+      "id": 1212,
+      "owner": 2,
+      "group": 108,
+      "level": 3,
+      "nodes": [
+        3700023,
+        3700024
+      ]
+    },
+    {
+      "id": 1213,
+      "owner": 2,
+      "group": 109,
+      "level": 1,
+      "nodes": [
+        3700025,
+        3700026
+      ]
+    },
+    {
+      "id": 1214,
+      "owner": 2,
+      "group": 109,
+      "level": 2,
+      "nodes": [
+        3700027,
+        3700028
+      ]
+    },
+    {
+      "id": 1215,
+      "owner": 2,
+      "group": 109,
+      "level": 3,
+      "nodes": [
+        3700029,
+        3700030
+      ]
+    },
+    {
+      "id": 1216,
+      "owner": 2,
+      "group": 110,
+      "level": 1,
+      "nodes": [
+        3700031,
+        3700032
+      ]
+    },
+    {
+      "id": 1217,
+      "owner": 2,
+      "group": 110,
+      "level": 2,
+      "nodes": [
+        3700033,
+        3700034
+      ]
+    },
+    {
+      "id": 1218,
+      "owner": 2,
+      "group": 110,
+      "level": 3,
+      "nodes": [
+        3700035,
+        3700036
+      ]
+    },
+    {
+      "id": 1219,
+      "owner": 2,
+      "group": 111,
+      "level": 1,
+      "nodes": [
+        3700037,
+        3700038
+      ]
+    },
+    {
+      "id": 1222,
+      "owner": 2,
+      "group": 112,
+      "level": 1,
+      "nodes": [
+        3700039,
+        3700040
+      ]
+    },
+    {
+      "id": 1223,
+      "owner": 2,
+      "group": 130,
+      "level": 1,
+      "nodes": [
+        3700501,
+        3700502
+      ]
+    },
+    {
+      "id": 1224,
+      "owner": 2,
+      "group": 130,
+      "level": 2,
+      "nodes": [
+        3700503,
+        3700504
+      ]
+    },
+    {
+      "id": 1225,
+      "owner": 2,
+      "group": 130,
+      "level": 3,
+      "nodes": [
+        3700505,
+        3700506
+      ]
+    },
+    {
+      "id": 1226,
+      "owner": 2,
+      "group": 115,
+      "level": 1,
+      "nodes": [
+        3700513,
+        3700514
+      ]
+    },
+    {
+      "id": 1227,
+      "owner": 2,
+      "group": 115,
+      "level": 2,
+      "nodes": [
+        3700515,
+        3700516
+      ]
+    },
+    {
+      "id": 1228,
+      "owner": 2,
+      "group": 115,
+      "level": 3,
+      "nodes": [
+        3700517,
+        3700518
+      ]
+    },
+    {
+      "id": 1229,
+      "owner": 2,
+      "group": 116,
+      "level": 1,
+      "nodes": [
+        3700519,
+        3700520
+      ]
+    },
+    {
+      "id": 1230,
+      "owner": 2,
+      "group": 116,
+      "level": 2,
+      "nodes": [
+        3700521,
+        3700522
+      ]
+    },
+    {
+      "id": 1231,
+      "owner": 2,
+      "group": 116,
+      "level": 3,
+      "nodes": [
+        3700523,
+        3700524
+      ]
+    },
+    {
+      "id": 1232,
+      "owner": 2,
+      "group": 117,
+      "level": 1,
+      "nodes": [
+        3700525,
+        3700526
+      ]
+    },
+    {
+      "id": 1233,
+      "owner": 2,
+      "group": 117,
+      "level": 2,
+      "nodes": [
+        3700527,
+        3700528
+      ]
+    },
+    {
+      "id": 1234,
+      "owner": 2,
+      "group": 117,
+      "level": 3,
+      "nodes": [
+        3700529,
+        3700530
+      ]
+    },
+    {
+      "id": 1235,
+      "owner": 2,
+      "group": 118,
+      "level": 1,
+      "nodes": [
+        3700531,
+        3700532
+      ]
+    },
+    {
+      "id": 1236,
+      "owner": 2,
+      "group": 118,
+      "level": 2,
+      "nodes": [
+        3700533,
+        3700534
+      ]
+    },
+    {
+      "id": 1237,
+      "owner": 2,
+      "group": 118,
+      "level": 3,
+      "nodes": [
+        3700535,
+        3700536
+      ]
+    },
+    {
+      "id": 3001,
+      "owner": 1,
+      "group": 30,
+      "level": 1,
+      "nodes": [
+        20501,
+        20502
+      ]
+    },
+    {
+      "id": 3002,
+      "owner": 1,
+      "group": 30,
+      "level": 2,
+      "nodes": [
+        20503,
+        20504
+      ]
+    },
+    {
+      "id": 3003,
+      "owner": 1,
+      "group": 30,
+      "level": 3,
+      "nodes": [
+        20505,
+        20506
+      ]
+    },
+    {
+      "id": 3107,
+      "owner": 1,
+      "group": 15,
+      "level": 1,
+      "nodes": [
+        20513,
+        20514
+      ]
+    },
+    {
+      "id": 3108,
+      "owner": 1,
+      "group": 15,
+      "level": 2,
+      "nodes": [
+        20515,
+        20516
+      ]
+    },
+    {
+      "id": 3109,
+      "owner": 1,
+      "group": 15,
+      "level": 3,
+      "nodes": [
+        20517,
+        20518
+      ]
+    },
+    {
+      "id": 3110,
+      "owner": 1,
+      "group": 16,
+      "level": 1,
+      "nodes": [
+        20519,
+        20520
+      ]
+    },
+    {
+      "id": 3111,
+      "owner": 1,
+      "group": 16,
+      "level": 2,
+      "nodes": [
+        20521,
+        20522
+      ]
+    },
+    {
+      "id": 3112,
+      "owner": 1,
+      "group": 16,
+      "level": 3,
+      "nodes": [
+        20523,
+        20524
+      ]
+    },
+    {
+      "id": 3113,
+      "owner": 1,
+      "group": 17,
+      "level": 1,
+      "nodes": [
+        20525,
+        20526
+      ]
+    },
+    {
+      "id": 3114,
+      "owner": 1,
+      "group": 17,
+      "level": 2,
+      "nodes": [
+        20527,
+        20528
+      ]
+    },
+    {
+      "id": 3115,
+      "owner": 1,
+      "group": 17,
+      "level": 3,
+      "nodes": [
+        20529,
+        20530
+      ]
+    },
+    {
+      "id": 3116,
+      "owner": 1,
+      "group": 18,
+      "level": 1,
+      "nodes": [
+        20531,
+        20532
+      ]
+    },
+    {
+      "id": 3117,
+      "owner": 1,
+      "group": 18,
+      "level": 2,
+      "nodes": [
+        20533,
+        20534
+      ]
+    },
+    {
+      "id": 3118,
+      "owner": 1,
+      "group": 18,
+      "level": 3,
+      "nodes": [
+        20535,
+        20536
+      ]
+    }
+  ]
+}
