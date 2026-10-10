@@ -30,10 +30,11 @@ const (
 )
 
 type educateState struct {
-	Entry     *orm.CommanderTB
-	Info      *protobuf.TBINFO
-	Permanent *protobuf.TBPERMANENT
-	Lifecycle *educateLifecycle
+	Entry       *orm.CommanderTB
+	Info        *protobuf.TBINFO
+	Permanent   *protobuf.TBPERMANENT
+	Lifecycle   *educateLifecycle
+	EffectDepth uint32
 }
 
 func loadEducateState(client *connection.Client, tbID uint32) (*educateState, error) {

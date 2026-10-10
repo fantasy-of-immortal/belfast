@@ -6,6 +6,7 @@ import (
 )
 
 func applyNewEducateTalentSelection(state *educateState, talentID uint32) *protobuf.TBDROPS {
+	resetEducateHeldBenefit(state, talentID)
 	if state.Info.Benefit == nil {
 		state.Info.Benefit = &protobuf.TBBENEFIT{Actives: []*protobuf.TBBF{}}
 	}

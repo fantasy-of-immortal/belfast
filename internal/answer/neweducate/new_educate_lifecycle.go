@@ -74,15 +74,19 @@ type educateStage struct {
 	Completed bool `json:"completed"`
 }
 type educateLifecycle struct {
-	Version        int                      `json:"version"`
-	Round          uint32                   `json:"round"`
-	TempRound      uint32                   `json:"temp_round"`
-	Stages         map[uint32]educateStage  `json:"stages"`
-	Schedule       *educateScheduleProgress `json:"schedule,omitempty"`
-	Chain          *educateNodeChain        `json:"chain,omitempty"`
-	ConditionDraws map[string]uint32        `json:"condition_draws,omitempty"`
-	NumericLedger  *educateNumericLedger    `json:"numeric_ledger,omitempty"`
-	RoundSites     []educateConditionSite   `json:"round_sites,omitempty"`
+	Version            int                                   `json:"version"`
+	Round              uint32                                `json:"round"`
+	TempRound          uint32                                `json:"temp_round"`
+	Stages             map[uint32]educateStage               `json:"stages"`
+	Schedule           *educateScheduleProgress              `json:"schedule,omitempty"`
+	Chain              *educateNodeChain                     `json:"chain,omitempty"`
+	ConditionDraws     map[string]uint32                     `json:"condition_draws,omitempty"`
+	NumericLedger      *educateNumericLedger                 `json:"numeric_ledger,omitempty"`
+	RoundSites         []educateConditionSite                `json:"round_sites,omitempty"`
+	BenefitRounds      map[uint32]educateConditionBuffRounds `json:"benefit_rounds,omitempty"`
+	BenefitConsumption map[string]uint32                     `json:"benefit_consumption,omitempty"`
+	BenefitExecutions  map[string]bool                       `json:"benefit_executions,omitempty"`
+	PrioritySources    []educatePrioritySource               `json:"priority_sources,omitempty"`
 }
 
 type educateCourseProgress struct {

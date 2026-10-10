@@ -14,26 +14,15 @@ type educatePolaroidConfig struct {
 	Character uint32 `json:"character"`
 }
 
-// Drop kinds use the client's distinct delivery paths. A missing choice/tarot
-// workflow is an explicit error; its reward cannot be discarded after payment.
+// Drop kinds use distinct delivery paths, including durable priority queues.
 func applyEducateDropBatch(state *educateState, rows [][]int32, multiplier uint32, context *educateConditionContext) ([]*protobuf.TBDROP, error) {
-	if state.Permanent == nil || state.Lifecycle == nil {
-		return nil, fmt.Errorf("drop delivery requires complete role state")
-	}
-	candidate := *state
-	candidate.Info = proto.Clone(state.Info).(*protobuf.TBINFO)
-	candidate.Permanent = proto.Clone(state.Permanent).(*protobuf.TBPERMANENT)
-	raw, err := json.Marshal(state.Lifecycle)
+	candidate, err := cloneEducateDeliveryState(state)
 	if err != nil {
-		return nil, err
-	}
-	candidate.Lifecycle = &educateLifecycle{}
-	if err := json.Unmarshal(raw, candidate.Lifecycle); err != nil {
 		return nil, err
 	}
 	actual := []*protobuf.TBDROP{}
 	for index, row := range rows {
-		if len(row) != 3 || row[0] <= 0 || row[1] < 0 {
+		if len(row) != 3 || row[0] <= 0 || row[1] < 0 || (row[1] == 0 && row[0] != 6 && row[0] != 7) {
 			return nil, fmt.Errorf("drop[%d]: invalid triplet", index)
 		}
 		if row[0] == 1 || row[0] == 2 {
@@ -57,24 +46,13 @@ func applyEducateDropBatch(state *educateState, rows [][]int32, multiplier uint3
 			if !ok || photo.Character != state.Info.GetId() || amount != 1 {
 				return nil, fmt.Errorf("drop[%d]: polaroid requires owned configuration and one acquisition", index)
 			}
-			candidate.Permanent.Polaroids = append(candidate.Permanent.Polaroids, photo.ID)
+			candidate.Permanent.Polaroids = appendUniqueUint32(candidate.Permanent.Polaroids, photo.ID)
 		case 4:
-			if amount != 1 {
-				return nil, fmt.Errorf("drop[%d]: benefit acquisition/removal workflow requires recovery", index)
-			}
-			if _, err := educateNumericTalentBenefits(&candidate, uint32(row[1])); err != nil {
-				return nil, err
-			}
-			if candidate.Info.Fsm.GetSystemNo() == newEducateSystemPlan || candidate.Info.Fsm.GetSystemNo() == newEducateSystemAssess || candidate.Info.Fsm.GetSystemNo() == newEducateSystemPhase {
-				return nil, fmt.Errorf("drop[%d]: pending benefit activation requires recovery", index)
-			}
-			applyNewEducateTalentSelection(&candidate, uint32(row[1]))
-			candidate.Info.Talent.Talents = appendUniqueUint32(candidate.Info.Talent.Talents, uint32(row[1]))
-			immediate, err := applyEducateTalentTriggerFor(&candidate, 13, uint32(row[1]))
+			immediate, err := deliverEducateBenefit(&candidate, uint32(row[1]), amount)
 			if err != nil {
 				return nil, err
 			}
-			actual = append(actual, immediate.BenefitDrop...)
+			actual = append(actual, immediate...)
 		case 7:
 			if amount <= 0 || uint64(candidate.Info.Round.GetTempRound())+uint64(amount) > math.MaxUint32 {
 				return nil, fmt.Errorf("drop[%d]: invalid temporary round award", index)
@@ -82,16 +60,47 @@ func applyEducateDropBatch(state *educateState, rows [][]int32, multiplier uint3
 			candidate.Info.Round.TempRound = proto.Uint32(candidate.Info.Round.GetTempRound() + uint32(amount))
 			candidate.Lifecycle.TempRound = candidate.Info.Round.GetTempRound()
 		case 5, 6, 10000:
-			return nil, fmt.Errorf("drop[%d]: choice/entry/tarot type %d requires its recovered delivery workflow", index, row[0])
+			if err := deliverEducatePriorityDrop(&candidate, uint32(row[0]), uint32(row[1]), amount, context); err != nil {
+				return nil, fmt.Errorf("drop[%d]: %w", index, err)
+			}
 		default:
 			return nil, fmt.Errorf("drop[%d]: unknown delivery type %d", index, row[0])
 		}
 		actual = append(actual, &protobuf.TBDROP{Type: proto.Uint32(uint32(row[0])), Id: proto.Uint32(uint32(row[1])), Number: proto.Int32(int32(amount))})
 	}
+	commitEducateDeliveryState(state, &candidate)
+	return actual, nil
+}
+
+func cloneEducateDeliveryState(state *educateState) (educateState, error) {
+	if state.Info == nil || state.Permanent == nil || state.Lifecycle == nil {
+		return educateState{}, fmt.Errorf("delivery requires complete role state")
+	}
+	candidate := *state
+	candidate.Info = proto.Clone(state.Info).(*protobuf.TBINFO)
+	candidate.Permanent = proto.Clone(state.Permanent).(*protobuf.TBPERMANENT)
+	raw, err := json.Marshal(state.Lifecycle)
+	if err != nil {
+		return educateState{}, err
+	}
+	candidate.Lifecycle = &educateLifecycle{}
+	if err := json.Unmarshal(raw, candidate.Lifecycle); err != nil {
+		return educateState{}, err
+	}
+	ensureEducateBenefitMemory(&candidate)
+	return candidate, nil
+}
+
+// Do not replace the caller's chain, slot or main FSM cache pointers: ongoing
+// node/course handlers retain them until the enclosing transaction commits.
+func commitEducateDeliveryState(state, candidate *educateState) {
 	state.Info.Res, state.Info.Benefit, state.Info.Talent = candidate.Info.Res, candidate.Info.Benefit, candidate.Info.Talent
 	state.Info.Round.TempRound = candidate.Info.Round.TempRound
 	state.Permanent.Polaroids, state.Permanent.TarotArchive = candidate.Permanent.Polaroids, candidate.Permanent.TarotArchive
 	state.Lifecycle.NumericLedger, state.Lifecycle.ConditionDraws = candidate.Lifecycle.NumericLedger, candidate.Lifecycle.ConditionDraws
 	state.Lifecycle.TempRound = candidate.Lifecycle.TempRound
-	return actual, nil
+	state.Lifecycle.BenefitRounds, state.Lifecycle.BenefitConsumption = candidate.Lifecycle.BenefitRounds, candidate.Lifecycle.BenefitConsumption
+	state.Lifecycle.BenefitExecutions = candidate.Lifecycle.BenefitExecutions
+	state.Lifecycle.PrioritySources = candidate.Lifecycle.PrioritySources
+	state.Info.Fsm.PriorityFsm, state.Info.Fsm.TarotSelects = candidate.Info.Fsm.PriorityFsm, candidate.Info.Fsm.TarotSelects
 }

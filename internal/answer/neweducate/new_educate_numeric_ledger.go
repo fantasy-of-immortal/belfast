@@ -88,6 +88,9 @@ func recordEducateNumericChanges(state *educateState, drops []*protobuf.TBDROP) 
 }
 
 func educateChangeContext(state *educateState, action string, sourceID uint32, drops []*protobuf.TBDROP) *educateConditionContext {
+	if state.Lifecycle != nil {
+		ensureEducateBenefitMemory(state)
+	}
 	context := &educateConditionContext{ExecutionID: action, SourceBuffID: sourceID, Changes: map[string]educateNumericChange{}, RoundChanges: map[string]educateNumericChange{}, HeldChanges: map[string]educateNumericChange{}}
 	for _, drop := range drops {
 		key := educateNumericKey(drop.GetType(), drop.GetId())
@@ -107,6 +110,9 @@ func educateChangeContext(state *educateState, action string, sourceID uint32, d
 	}
 	if state.Lifecycle != nil {
 		context.RoundSites = append([]educateConditionSite{}, state.Lifecycle.RoundSites...)
+		context.RemovedBuffs = []uint32{}
+		context.BuffRounds = state.Lifecycle.BenefitRounds
+		context.KnownBenefitRounds = true
 	}
 	return context
 }
@@ -114,10 +120,21 @@ func educateChangeContext(state *educateState, action string, sourceID uint32, d
 func educateBenefitConditionContext(state *educateState, base *educateConditionContext, id uint32, suffix string) *educateConditionContext {
 	context := educateChangeContext(state, educateActionID(state, suffix), id, nil)
 	if base != nil {
-		context.ExecutionID, context.Draw = base.ExecutionID, base.Draw
+		if base.ExecutionID != "" {
+			context.ExecutionID = base.ExecutionID
+		}
+		context.Draw = base.Draw
 		context.Plans, context.PlanID, context.Slot = base.Plans, base.PlanID, base.Slot
-		context.Site, context.Changes = base.Site, base.Changes
-		context.RemovedBuffs, context.BuffRounds = base.RemovedBuffs, base.BuffRounds
+		context.Site = base.Site
+		if base.Changes != nil {
+			context.Changes = base.Changes
+		}
+		if base.RemovedBuffs != nil {
+			context.RemovedBuffs = base.RemovedBuffs
+		}
+		if base.BuffRounds != nil {
+			context.BuffRounds = base.BuffRounds
+		}
 	}
 	return context
 }

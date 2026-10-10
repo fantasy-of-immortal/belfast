@@ -7,6 +7,7 @@ import (
 	"math/big"
 
 	"github.com/ggmolly/belfast/internal/protobuf"
+	"google.golang.org/protobuf/proto"
 )
 
 // Local gain policy: add percentage bonuses, then multiply each final factor;
@@ -20,19 +21,33 @@ func applyEducateGainBatch(state *educateState, rows [][]int32, multiplier uint3
 	seen := map[uint32]bool{}
 	for _, active := range state.Info.Benefit.GetActives() {
 		if active.GetIsPending() != 0 {
-			return nil, fmt.Errorf("pending benefit requires activation recovery")
+			continue
 		}
 		if seen[active.GetId()] {
 			continue
 		}
 		seen[active.GetId()] = true
-		benefits, err := educateNumericTalentBenefits(state, active.GetId())
+		_, benefits, err := loadEducateBenefitDefinition(state, active.GetId())
 		if err != nil {
 			return nil, err
 		}
 		for _, benefit := range benefits {
-			if benefit.Trigger != 1 && (benefit.Trigger != 2 || context == nil || context.Slot == 0) {
+			if benefit.Trigger != 1 && benefit.Trigger != 19 && (benefit.Trigger != 2 || context == nil || context.Slot == 0) {
 				continue
+			}
+			// Numeric-change passive modifiers are evaluated against their held
+			// ledger at award time. One-off change rewards use trigger 19 instead.
+			if benefit.Trigger == 19 {
+				modifier := false
+				for _, effect := range benefit.Effect {
+					var kind uint32
+					if len(effect) > 0 && json.Unmarshal(effect[0], &kind) == nil && (kind == 3 || kind == 4) {
+						modifier = true
+					}
+				}
+				if !modifier {
+					continue
+				}
 			}
 			benefitContext := educateBenefitConditionContext(state, context, active.GetId(), "gain")
 			matched, err := evaluateEducateConditionWithContext(state, benefit.Condition, benefitContext)
@@ -45,13 +60,26 @@ func applyEducateGainBatch(state *educateState, rows [][]int32, multiplier uint3
 			for _, effect := range benefit.Effect {
 				var kind uint32
 				var row []int32
+				if len(effect) != 2 {
+					return nil, fmt.Errorf("benefit %d: invalid modifier effect", benefit.ID)
+				}
 				if err := json.Unmarshal(effect[0], &kind); err != nil {
 					return nil, err
 				}
-				if kind == 1 {
+				if kind == 1 || kind == 2 || kind == 28 {
 					continue
 				}
+				if kind != 3 && kind != 4 {
+					return nil, fmt.Errorf("benefit %d modifier kind %d requires S06 execution", benefit.ID, kind)
+				}
 				if err := json.Unmarshal(effect[1], &row); err != nil {
+					return nil, err
+				}
+				if len(row) != 3 || (row[0] != 1 && row[0] != 2) || row[1] <= 0 || row[2] < -10000 {
+					return nil, fmt.Errorf("benefit %d: invalid numeric modifier", benefit.ID)
+				}
+				probe := &educateState{Info: proto.Clone(state.Info).(*protobuf.TBINFO)}
+				if _, err := applyEducateNumericBatch(probe, [][]int32{row}, 1, false); err != nil {
 					return nil, err
 				}
 				key := educateNumericKey(uint32(row[0]), uint32(row[1]))

@@ -134,6 +134,7 @@ func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, dep
 	}
 	if selected != nil {
 		context.Number, context.Multiplier, context.hasNumber, context.usesNumber = selected.Number, selected.Multiplier, selected.hasNumber, selected.usesNumber
+		context.window = selected.window
 	}
 	return result, nil
 }

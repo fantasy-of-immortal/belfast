@@ -9,25 +9,26 @@ import (
 // Nil lists mean the corresponding action context has not been recovered;
 // an explicitly empty list means it is known to contain no matching action.
 type educateConditionContext struct {
-	ExecutionID  string
-	Plans        []uint32
-	PlanID       uint32
-	Slot         uint32
-	Site         *educateConditionSite
-	RoundSites   []educateConditionSite
-	RemovedBuffs []uint32
-	SourceBuffID uint32
-	BuffRounds   map[uint32]educateConditionBuffRounds
-	Draw         func(uint64) (uint64, error)
-	Changes      map[string]educateNumericChange
-	RoundChanges map[string]educateNumericChange
-	HeldChanges  map[string]educateNumericChange
-	Number       int64
-	Multiplier   uint32
-	hasNumber    bool
-	usesNumber   bool
-	window       uint32
-	draws        map[string]uint32
+	ExecutionID        string
+	Plans              []uint32
+	PlanID             uint32
+	Slot               uint32
+	Site               *educateConditionSite
+	RoundSites         []educateConditionSite
+	RemovedBuffs       []uint32
+	SourceBuffID       uint32
+	BuffRounds         map[uint32]educateConditionBuffRounds
+	KnownBenefitRounds bool
+	Draw               func(uint64) (uint64, error)
+	Changes            map[string]educateNumericChange
+	RoundChanges       map[string]educateNumericChange
+	HeldChanges        map[string]educateNumericChange
+	Number             int64
+	Multiplier         uint32
+	hasNumber          bool
+	usesNumber         bool
+	window             uint32
+	draws              map[string]uint32
 }
 
 type educateConditionSite struct {
@@ -38,8 +39,8 @@ type educateConditionSite struct {
 // Acquisition/reset/temporary-round handling belongs to the benefit engine.
 // Do not synthesize these counters from TBROUND or a buff's acquisition round.
 type educateConditionBuffRounds struct {
-	Total      uint32
-	SinceReset uint32
+	Total      uint32 `json:"total"`
+	SinceReset uint32 `json:"since_reset"`
 }
 
 // Failed expressions never leave a partially recorded random decision. On
@@ -68,6 +69,7 @@ func evaluateEducateConditionWithContext(state *educateState, raw json.RawMessag
 		state.Lifecycle.ConditionDraws = candidate.draws
 	}
 	context.Number, context.Multiplier, context.hasNumber, context.usesNumber = candidate.Number, candidate.Multiplier, candidate.hasNumber, candidate.usesNumber
+	context.window = candidate.window
 	return matched, nil
 }
 
@@ -260,6 +262,16 @@ func evaluateEducateContextCondition(state *educateState, c *educateConditionCon
 			return false, fmt.Errorf("buff round condition requires benefit counter context")
 		}
 		counter, exists := context.BuffRounds[id]
+		if context.KnownBenefitRounds {
+			if _, _, err := loadEducateBenefitDefinition(state, id); err != nil {
+				return false, err
+			}
+			// A complete server snapshot distinguishes a buff that is absent
+			// from missing caller context. An absent buff has held zero rounds.
+			if !exists {
+				counter, exists = educateConditionBuffRounds{}, true
+			}
+		}
 		if !exists {
 			return false, fmt.Errorf("buff %d round counters unavailable", id)
 		}

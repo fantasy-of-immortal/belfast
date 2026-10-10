@@ -16,6 +16,23 @@ type educateNumericConfig struct {
 	Max       int64  `json:"max_value"`
 }
 
+// SET is an absolute configured value, not an additive reward. Report and
+// record only the bounded difference, without applying gain percentages.
+func applyEducateNumericSet(state *educateState, row []int32) ([]*protobuf.TBDROP, error) {
+	if len(row) != 3 || row[1] <= 0 || (row[0] != 1 && row[0] != 2) {
+		return nil, fmt.Errorf("SET requires numeric triplet")
+	}
+	values := state.Info.Res.Attrs
+	if row[0] == 2 {
+		values = state.Info.Res.Resource
+	}
+	delta := int64(row[2]) - educateKVCount(values, uint32(row[1]))
+	if delta < math.MinInt32 || delta > math.MaxInt32 {
+		return nil, fmt.Errorf("SET delta exceeds protocol")
+	}
+	return applyEducateNumericBatch(state, [][]int32{{row[0], row[1], int32(delta)}}, 1, false)
+}
+
 // Numeric batches are validated on a clone. A later invalid item cannot leave
 // a partial payment or reward in the caller's state.
 func applyEducateNumericBatch(state *educateState, rows [][]int32, multiplier uint32, cost bool) ([]*protobuf.TBDROP, error) {

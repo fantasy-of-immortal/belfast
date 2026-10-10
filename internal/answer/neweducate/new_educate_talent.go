@@ -88,10 +88,7 @@ func educateNumericTalentBenefits(state *educateState, id uint32) ([]*educateBen
 
 func validateEducateNumericActives(state *educateState) error {
 	for _, active := range state.Info.Benefit.GetActives() {
-		if active.GetIsPending() != 0 {
-			return fmt.Errorf("pending benefit requires activation recovery")
-		}
-		if _, err := educateNumericTalentBenefits(state, active.GetId()); err != nil {
+		if _, _, err := loadEducateBenefitDefinition(state, active.GetId()); err != nil {
 			return err
 		}
 	}
@@ -107,20 +104,38 @@ func applyEducateTalentTriggerFor(state *educateState, trigger uint32, acquiredI
 }
 
 func applyEducateTalentTriggerWithContext(state *educateState, trigger uint32, acquiredID uint32, conditionContext *educateConditionContext) (*protobuf.TBDROPS, error) {
+	if state.EffectDepth >= 16 {
+		return nil, fmt.Errorf("benefit effect nesting exceeds 16")
+	}
+	candidate, err := cloneEducateDeliveryState(state)
+	if err != nil {
+		return nil, err
+	}
+	candidate.EffectDepth++
+	ensureEducateBenefitMemory(&candidate)
+	drops, err := applyEducateTalentTriggerForActives(&candidate, trigger, acquiredID, conditionContext, candidate.Info.Benefit.GetActives())
+	if err != nil {
+		return nil, err
+	}
+	commitEducateDeliveryState(state, &candidate)
+	return drops, nil
+}
+
+func applyEducateTalentTriggerForActives(state *educateState, trigger uint32, acquiredID uint32, conditionContext *educateConditionContext, actives []*protobuf.TBBF) (*protobuf.TBDROPS, error) {
 	drops := emptyTBDrops()
 	seen := map[uint32]bool{}
-	for _, active := range state.Info.Benefit.GetActives() {
+	for _, active := range actives {
 		if acquiredID != 0 && active.GetId() != acquiredID {
 			continue
 		}
 		if active.GetIsPending() != 0 {
-			return nil, fmt.Errorf("pending benefit requires activation recovery")
+			continue
 		}
 		if seen[active.GetId()] {
 			continue
 		}
 		seen[active.GetId()] = true
-		benefits, err := educateNumericTalentBenefits(state, active.GetId())
+		_, benefits, err := loadEducateBenefitDefinition(state, active.GetId())
 		if err != nil {
 			return nil, err
 		}
@@ -128,34 +143,100 @@ func applyEducateTalentTriggerWithContext(state *educateState, trigger uint32, a
 			if b.Trigger != trigger {
 				continue
 			}
+			if trigger == 19 {
+				imperative := false
+				for _, effect := range b.Effect {
+					var kind uint32
+					if len(effect) == 0 || json.Unmarshal(effect[0], &kind) != nil {
+						return nil, fmt.Errorf("benefit %d: invalid effect", b.ID)
+					}
+					if kind != 3 && kind != 4 {
+						imperative = true
+					}
+				}
+				if !imperative {
+					continue
+				}
+			}
 			context := educateBenefitConditionContext(state, conditionContext, active.GetId(), fmt.Sprintf("trigger:%d", trigger))
+			executionKey := fmt.Sprintf("%d/%d/%s", active.GetId(), b.ID, context.ExecutionID)
+			if state.Lifecycle.BenefitExecutions[executionKey] {
+				continue
+			}
 			matched, err := evaluateEducateConditionWithContext(state, b.Condition, context)
 			if err != nil {
 				return nil, err
 			}
+			ensureEducateBenefitMemory(state)
+			consumptionKey := fmt.Sprintf("%d/%d/%d", active.GetId(), b.ID, context.window)
+			totalMultiplier := context.Multiplier
+			if context.usesNumber && (context.window == 18 || context.window == 19) {
+				consumed := state.Lifecycle.BenefitConsumption[consumptionKey]
+				if consumed > totalMultiplier {
+					return nil, fmt.Errorf("benefit %d consumption counter exceeds accumulated units", b.ID)
+				}
+				context.Multiplier -= consumed
+				if !matched {
+					state.Lifecycle.BenefitConsumption[consumptionKey] = totalMultiplier
+				}
+				if context.Multiplier == 0 {
+					state.Lifecycle.BenefitExecutions[executionKey] = true
+					continue
+				}
+			}
 			if !matched {
+				state.Lifecycle.BenefitExecutions[executionKey] = true
 				continue
 			}
-			rows := make([][]int32, 0, len(b.Effect))
 			for _, effect := range b.Effect {
 				var kind uint32
+				if len(effect) != 2 {
+					return nil, fmt.Errorf("benefit %d: invalid effect arity", b.ID)
+				}
 				if err := json.Unmarshal(effect[0], &kind); err != nil {
 					return nil, err
 				}
-				if kind != 1 {
+				if kind == 3 || kind == 4 {
+					if trigger != 1 && trigger != 2 && trigger != 19 {
+						return nil, fmt.Errorf("benefit %d: modifier trigger %d requires S06 execution", b.ID, trigger)
+					}
 					continue
+				}
+				if kind == 28 {
+					var count int32
+					if err := json.Unmarshal(effect[1], &count); err != nil {
+						return nil, err
+					}
+					actual, err := applyEducateDropBatch(state, [][]int32{{7, 0, count}}, context.Multiplier, context)
+					if err != nil {
+						return nil, err
+					}
+					drops.BenefitDrop = append(drops.BenefitDrop, actual...)
+					continue
+				}
+				if kind != 1 && kind != 2 {
+					return nil, fmt.Errorf("ShareCfg/child2_benefit.json/%d/effect: kind %d requires S06 execution", b.ID, kind)
 				}
 				var row []int32
 				if err := json.Unmarshal(effect[1], &row); err != nil {
 					return nil, err
 				}
-				rows = append(rows, row)
+				var actual []*protobuf.TBDROP
+				var err error
+				if kind == 2 {
+					actual, err = applyEducateNumericSet(state, row)
+				} else {
+					actual, err = applyEducateDropBatch(state, [][]int32{row}, context.Multiplier, context)
+				}
+				if err != nil {
+					return nil, err
+				}
+				drops.BenefitDrop = append(drops.BenefitDrop, actual...)
 			}
-			actual, err := applyEducateGainBatch(state, rows, context.Multiplier, context)
-			if err != nil {
-				return nil, err
+			if context.usesNumber && (context.window == 18 || context.window == 19) {
+				state.Lifecycle.BenefitConsumption[consumptionKey] = totalMultiplier
 			}
-			drops.BenefitDrop = append(drops.BenefitDrop, actual...)
+			state.Lifecycle.BenefitExecutions[executionKey] = true
 		}
 	}
 	return drops, nil

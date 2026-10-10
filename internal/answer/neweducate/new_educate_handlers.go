@@ -5,6 +5,7 @@ import (
 	"github.com/ggmolly/belfast/internal/connection"
 	"github.com/ggmolly/belfast/internal/protobuf"
 	"google.golang.org/protobuf/proto"
+	"strings"
 )
 
 func NewEducateSetCall(buffer *[]byte, client *connection.Client) (int, int, error) {
@@ -80,10 +81,9 @@ func NewEducateGetTalents(buffer *[]byte, client *connection.Client) (int, int, 
 	return client.SendMessage(29020, &protobuf.SC_29020{Result: proto.Uint32(0), Talents: ensureEducateCache(state.Info).CacheTalent[0].Talents})
 }
 
-// 29101-29127 priority-choice handlers. The client manages its FSM locally
-// from these replies; handlers that do not mutate server state simply answer
-// Result=0 (see deep/09-status.md T2 records). Missing handlers here cause the
-// 6-second SC_10998 retry storm (backyard CS_19026 failure mode).
+// Round CHOOSE progression predates the recovered priority-drop queues.
+// Generating round.tarot_select candidates and resolving the 291xx priority
+// interactions remain S06 work; unsupported commands explicitly reject.
 
 func NewEducateGetChoose(buffer *[]byte, client *connection.Client) (int, int, error) {
 	var payload protobuf.CS_29126
@@ -152,9 +152,14 @@ func NewEducateChangePhase(buffer *[]byte, client *connection.Client) (int, int,
 		if !educateCanChangePhase(state) {
 			return errEducatePhase
 		}
-		advanceNewEducateRound(state)
-		var err error
+		boundary, err := advanceNewEducateRound(state)
+		if err != nil {
+			return err
+		}
 		drop, err = applyEducateTalentTrigger(state, 5)
+		if err == nil {
+			drop.BenefitDrop = append(boundary, drop.BenefitDrop...)
+		}
 		return err
 	})
 	if err != nil {
@@ -665,24 +670,58 @@ func upsertKVDATACount(values []*protobuf.KVDATA, key uint32, increment uint32) 
 	return append(values, &protobuf.KVDATA{Key: proto.Uint32(key), Value: proto.Uint32(increment)})
 }
 
-func advanceNewEducateRound(state *educateState) {
+func advanceNewEducateRound(state *educateState) ([]*protobuf.TBDROP, error) {
+	source := *state
+	if source.Lifecycle == nil {
+		source.Lifecycle = freshEducateLifecycle(source.Info)
+	}
+	candidate, err := cloneEducateDeliveryState(&source)
+	if err != nil {
+		return nil, err
+	}
+	drops, err := advanceEducateRoundCandidate(&candidate)
+	if err != nil {
+		return nil, err
+	}
+	// Round boundaries have no retained course/node pointer: commit the new
+	// round/FSM and fresh lifecycle together with their benefit transitions.
+	proto.Reset(state.Info)
+	proto.Merge(state.Info, candidate.Info)
+	proto.Reset(state.Permanent)
+	proto.Merge(state.Permanent, candidate.Permanent)
+	state.Lifecycle = candidate.Lifecycle
+	return drops, nil
+}
+
+func advanceEducateRoundCandidate(state *educateState) ([]*protobuf.TBDROP, error) {
 	tempRounds := state.Info.Round.GetTempRound()
 	if tempRounds > 0 {
 		state.Info.Round.InTemp = proto.Uint32(1)
 		state.Info.Round.TempRound = proto.Uint32(tempRounds - 1)
 	} else {
+		if state.Info.Round.GetRound() == ^uint32(0) {
+			return nil, fmt.Errorf("round overflow")
+		}
 		state.Info.Round.InTemp = proto.Uint32(0)
 		state.Info.Round.Round = proto.Uint32(state.Info.Round.GetRound() + 1)
 	}
 	state.Info.EvalFail = proto.Uint32(0)
 	state.Permanent.MaxRound = proto.Uint32(maxUint32(state.Permanent.GetMaxRound(), state.Info.Round.GetRound()))
 	state.Info.Fsm = ensureTBInfoDefaults(tbInfoPlaceholder()).Fsm
-	ledger := state.Lifecycle.NumericLedger
+	previous := state.Lifecycle
+	ledger := previous.NumericLedger
 	state.Lifecycle = freshEducateLifecycle(state.Info)
+	state.Lifecycle.BenefitRounds, state.Lifecycle.BenefitConsumption = previous.BenefitRounds, previous.BenefitConsumption
+	for key := range state.Lifecycle.BenefitConsumption {
+		if strings.HasSuffix(key, "/18") {
+			delete(state.Lifecycle.BenefitConsumption, key)
+		}
+	}
 	if ledger != nil {
 		state.Lifecycle.NumericLedger = &educateNumericLedger{Round: map[string]educateNumericChange{}, Held: ledger.Held}
 	}
 	state.Info.Site.Characters = []uint32{}
+	return transitionEducateBenefits(state, state.Info.Round.GetRound())
 }
 
 func maxUint32(left uint32, right uint32) uint32 {
