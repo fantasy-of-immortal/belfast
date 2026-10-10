@@ -205,12 +205,16 @@ func currentNewEducatePlanConfig(state *educateState) (*newEducatePlanConfig, bo
 
 // newEducateResultDrops converts child2_plan result_display (or a generic
 // [[type,id,number], ...]) into a TBDROPS worth of base drops.
-func newEducateResultDrops(state *educateState, triplets [][]int32) (*protobuf.TBDROPS, error) {
-	actual, err := applyEducateNumericBatch(state, triplets, 1, false)
+func newEducateResultDrops(state *educateState, triplets [][]int32, planID, slot uint32) (*protobuf.TBDROPS, error) {
+	context := educateChangeContext(state, educateActionID(state, fmt.Sprintf("course:%d", slot)), 0, nil)
+	context.PlanID, context.Slot = planID, slot
+	actual, err := applyEducateDropBatch(state, triplets, 1, context)
 	if err != nil {
 		return nil, err
 	}
-	benefits, err := applyEducateTalentTrigger(state, 2)
+	context = educateChangeContext(state, context.ExecutionID, 0, actual)
+	context.PlanID, context.Slot = planID, slot
+	benefits, err := applyEducateTalentTriggerWithContext(state, 2, 0, context)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +296,7 @@ func NewEducateTriggerNode(buffer *[]byte, client *connection.Client) (int, int,
 			if err != nil {
 				return err
 			}
-			response.Drop, err = newEducateResultDrops(state, rows)
+			response.Drop, err = newEducateResultDrops(state, rows, plan.ID, ensureEducateCache(state.Info).CachePlan[0].GetCurIndex())
 			if err != nil {
 				return err
 			}
@@ -465,7 +469,7 @@ func NewEducateScheduleSkip(buffer *[]byte, client *connection.Client) (int, int
 			if err != nil {
 				return err
 			}
-			drops, err := newEducateResultDrops(state, rows)
+			drops, err := newEducateResultDrops(state, rows, plan.ID, kv.GetKey())
 			if err != nil {
 				return err
 			}
@@ -592,7 +596,9 @@ func NewEducateMapNormal(buffer *[]byte, client *connection.Client) (int, int, e
 		logEducateFailure(client, payload.GetId(), 29062, err)
 		return client.SendMessage(29063, &protobuf.SC_29063{Result: proto.Uint32(1), FirstNode: proto.Uint32(0), Drop: emptyTBDrops()})
 	}
-	return client.SendMessage(29063, &protobuf.SC_29063{Result: proto.Uint32(0), FirstNode: proto.Uint32(state.Info.Fsm.GetCurrentNode()), Drop: emptyTBDrops()})
+	drops := emptyTBDrops()
+	drops.BenefitDrop = state.Lifecycle.Chain.StartRewards
+	return client.SendMessage(29063, &protobuf.SC_29063{Result: proto.Uint32(0), FirstNode: proto.Uint32(state.Info.Fsm.GetCurrentNode()), Drop: drops})
 }
 func NewEducateShopping(buffer *[]byte, client *connection.Client) (int, int, error) {
 	var payload protobuf.CS_29066
@@ -671,7 +677,11 @@ func advanceNewEducateRound(state *educateState) {
 	state.Info.EvalFail = proto.Uint32(0)
 	state.Permanent.MaxRound = proto.Uint32(maxUint32(state.Permanent.GetMaxRound(), state.Info.Round.GetRound()))
 	state.Info.Fsm = ensureTBInfoDefaults(tbInfoPlaceholder()).Fsm
+	ledger := state.Lifecycle.NumericLedger
 	state.Lifecycle = freshEducateLifecycle(state.Info)
+	if ledger != nil {
+		state.Lifecycle.NumericLedger = &educateNumericLedger{Round: map[string]educateNumericChange{}, Held: ledger.Held}
+	}
 	state.Info.Site.Characters = []uint32{}
 }
 

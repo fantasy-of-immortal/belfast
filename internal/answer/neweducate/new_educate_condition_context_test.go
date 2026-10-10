@@ -89,7 +89,7 @@ func TestRecoveryS03UnverifiedConditionsRollbackTransaction(t *testing.T) {
 				_, err := evaluateEducateConditionWithContext(state, json.RawMessage(`["||",[1028,`+raw+`]]`), &educateConditionContext{ExecutionID: "unsupported-window", Draw: func(uint64) (uint64, error) { return 0, nil }})
 				return err
 			})
-			if err == nil || (!strings.Contains(err.Error(), "unsupported condition type") && !strings.Contains(err.Error(), "invalid condition expression")) {
+			if err == nil || (!strings.Contains(err.Error(), "unsupported condition type") && !strings.Contains(err.Error(), "invalid condition expression") && !strings.Contains(err.Error(), "requires") && !strings.Contains(err.Error(), "required")) {
 				t.Fatalf("unverified semantics silently accepted or wrong failure: %v", err)
 			}
 			after, err := orm.GetCommanderTB(client.Commander.CommanderID, 2)

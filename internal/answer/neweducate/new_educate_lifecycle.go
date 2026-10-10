@@ -81,6 +81,8 @@ type educateLifecycle struct {
 	Schedule       *educateScheduleProgress `json:"schedule,omitempty"`
 	Chain          *educateNodeChain        `json:"chain,omitempty"`
 	ConditionDraws map[string]uint32        `json:"condition_draws,omitempty"`
+	NumericLedger  *educateNumericLedger    `json:"numeric_ledger,omitempty"`
+	RoundSites     []educateConditionSite   `json:"round_sites,omitempty"`
 }
 
 type educateCourseProgress struct {

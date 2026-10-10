@@ -46,28 +46,34 @@ func educateNumericTalentBenefits(state *educateState, id uint32) ([]*educateBen
 		if err != nil {
 			return nil, err
 		}
-		if !ok || (b.Trigger != 5 && b.Trigger != 2 && b.Trigger != 3 && b.Trigger != 13) {
+		if !ok || (b.Trigger != 1 && b.Trigger != 5 && b.Trigger != 6 && b.Trigger != 2 && b.Trigger != 3 && b.Trigger != 13) {
 			return nil, fmt.Errorf("talent %d benefit %d trigger requires recovery", id, benefitID)
 		}
-		// Course condition context (e.g. ${num}) is not yet restored. Only
-		// unconditional additive course talents have a verified contract.
-		if (b.Trigger == 2 || b.Trigger == 13) && string(b.Condition) != "[]" {
-			return nil, fmt.Errorf("talent %d course condition requires recovery", id)
-		}
 		var conditionContext *educateConditionContext
-		if b.Trigger == 3 {
+		if b.Trigger == 2 || b.Trigger == 3 || b.Trigger == 6 {
 			// Syntax/ownership validation before the schedule exists. This is
 			// not an execution snapshot; the boolean result is discarded.
-			conditionContext = &educateConditionContext{Plans: []uint32{}}
+			conditionContext = &educateConditionContext{Plans: []uint32{}, Slot: 1, PlanID: 1, ExecutionID: "syntax-probe", Draw: func(uint64) (uint64, error) { return 0, nil }}
 		}
-		if _, err := evaluateEducateConditionWithContext(state, b.Condition, conditionContext); err != nil {
+		probeState := *state
+		if state.Lifecycle != nil {
+			life := *state.Lifecycle
+			probeState.Lifecycle = &life
+		}
+		if _, err := evaluateEducateConditionWithContext(&probeState, b.Condition, conditionContext); err != nil {
 			return nil, err
 		}
 		for _, effect := range b.Effect {
 			var kind uint32
 			var row []int32
-			if len(effect) != 2 || json.Unmarshal(effect[0], &kind) != nil || kind != 1 || json.Unmarshal(effect[1], &row) != nil || len(row) != 3 || (row[0] != 1 && row[0] != 2) {
+			if len(effect) != 2 || json.Unmarshal(effect[0], &kind) != nil || (kind != 1 && kind != 3 && kind != 4) || json.Unmarshal(effect[1], &row) != nil || len(row) != 3 || (row[0] != 1 && row[0] != 2) {
 				return nil, fmt.Errorf("talent %d benefit %d effect requires recovery", id, benefitID)
+			}
+			if kind != 1 && b.Trigger != 1 && b.Trigger != 2 {
+				return nil, fmt.Errorf("talent %d modifier trigger %d requires recovery", id, b.Trigger)
+			}
+			if kind != 1 && row[2] < -10000 {
+				return nil, fmt.Errorf("talent %d negative gain factor", id)
 			}
 			// Validate the numeric contract without applying a future reward.
 			probe := &educateState{Info: proto.Clone(state.Info).(*protobuf.TBINFO)}
@@ -102,6 +108,7 @@ func applyEducateTalentTriggerFor(state *educateState, trigger uint32, acquiredI
 
 func applyEducateTalentTriggerWithContext(state *educateState, trigger uint32, acquiredID uint32, conditionContext *educateConditionContext) (*protobuf.TBDROPS, error) {
 	drops := emptyTBDrops()
+	seen := map[uint32]bool{}
 	for _, active := range state.Info.Benefit.GetActives() {
 		if acquiredID != 0 && active.GetId() != acquiredID {
 			continue
@@ -109,6 +116,10 @@ func applyEducateTalentTriggerWithContext(state *educateState, trigger uint32, a
 		if active.GetIsPending() != 0 {
 			return nil, fmt.Errorf("pending benefit requires activation recovery")
 		}
+		if seen[active.GetId()] {
+			continue
+		}
+		seen[active.GetId()] = true
 		benefits, err := educateNumericTalentBenefits(state, active.GetId())
 		if err != nil {
 			return nil, err
@@ -117,7 +128,8 @@ func applyEducateTalentTriggerWithContext(state *educateState, trigger uint32, a
 			if b.Trigger != trigger {
 				continue
 			}
-			matched, err := evaluateEducateConditionWithContext(state, b.Condition, conditionContext)
+			context := educateBenefitConditionContext(state, conditionContext, active.GetId(), fmt.Sprintf("trigger:%d", trigger))
+			matched, err := evaluateEducateConditionWithContext(state, b.Condition, context)
 			if err != nil {
 				return nil, err
 			}
@@ -126,13 +138,20 @@ func applyEducateTalentTriggerWithContext(state *educateState, trigger uint32, a
 			}
 			rows := make([][]int32, 0, len(b.Effect))
 			for _, effect := range b.Effect {
+				var kind uint32
+				if err := json.Unmarshal(effect[0], &kind); err != nil {
+					return nil, err
+				}
+				if kind != 1 {
+					continue
+				}
 				var row []int32
 				if err := json.Unmarshal(effect[1], &row); err != nil {
 					return nil, err
 				}
 				rows = append(rows, row)
 			}
-			actual, err := applyEducateNumericBatch(state, rows, 1, false)
+			actual, err := applyEducateGainBatch(state, rows, context.Multiplier, context)
 			if err != nil {
 				return nil, err
 			}

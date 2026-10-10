@@ -80,7 +80,8 @@ func startEducateNormalSite(state *educateState, id uint32) error {
 	if _, err := applyEducateNumericBatch(probe, config.Drops, 1, false); err != nil {
 		return err
 	}
-	if _, err := applyEducateNumericBatch(state, [][]int32{config.Cost}, 1, true); err != nil {
+	costs, err := applyEducateNumericBatch(state, [][]int32{config.Cost}, 1, true)
+	if err != nil {
 		return err
 	}
 	state.Lifecycle.Chain = &educateNodeChain{Version: state.Entry.Revision + 1, Source: "site.normal", ConfigID: id, Stage: newEducateSystemMap, Entry: config.Node, Current: config.Node, RewardRows: config.Drops}
@@ -88,6 +89,15 @@ func startEducateNormalSite(state *educateState, id uint32) error {
 	state.Info.Fsm.CurrentNode = proto.Uint32(config.Node)
 	ensureEducateCache(state.Info).CacheSite[0].State = &protobuf.KVDATA{Key: proto.Uint32(newEducateSiteStateNormal), Value: proto.Uint32(id)}
 	state.Info.Site.WorkCounter = upsertKVDATACount(state.Info.Site.WorkCounter, id, 1)
+	context := educateChangeContext(state, educateActionID(state, fmt.Sprintf("site:%d", id)), 0, costs)
+	context.Site = &educateConditionSite{Type: 1, ID: id}
+	state.Lifecycle.RoundSites = append(state.Lifecycle.RoundSites, *context.Site)
+	context.RoundSites = state.Lifecycle.RoundSites
+	drops, err := applyEducateTalentTriggerWithContext(state, 6, 0, context)
+	if err != nil {
+		return err
+	}
+	state.Lifecycle.Chain.StartRewards = drops.BenefitDrop
 	return nil
 }
 
@@ -99,7 +109,9 @@ func settleEducateNormalSite(state *educateState, branch uint32) (*protobuf.TBDR
 	if err := validateEducateNumericActives(state); err != nil {
 		return nil, err
 	}
-	delivery, err := applyEducateNumericBatch(state, chain.RewardRows, 1, false)
+	context := educateChangeContext(state, educateActionID(state, fmt.Sprintf("site.reward:%d", chain.Version)), 0, nil)
+	context.Site = &educateConditionSite{Type: 1, ID: chain.ConfigID}
+	delivery, err := applyEducateDropBatch(state, chain.RewardRows, 1, context)
 	if err != nil {
 		return nil, err
 	}

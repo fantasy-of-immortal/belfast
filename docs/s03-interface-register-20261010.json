@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-10",
+  "extends": "s03-interface-register-20261009.json",
+  "s03_status": "DOING",
+  "part1_status": "LOCAL_POLICY_IMPLEMENTED_OFFICIAL_EXECUTION_UNVERIFIED",
+  "user_objective": "Restore playable local behavior; strict reconstruction of official private server semantics is not required.",
+  "waiting_for_official_private_semantics": false,
+  "official_private_behavior_proved": false,
+  "interfaces": [
+    {
+      "id": "S03-NUMERIC-RULES",
+      "implementation": "internal/answer/neweducate/new_educate_condition_context.go",
+      "status": "LOCAL_POLICY_IMPLEMENTED",
+      "scope": "Types16-19 and num: explicit divisor, separate actual gain/spend counters, action/round/held windows, bound numeric multiplier.",
+      "limits": "Missing action/removal/benefit-round contexts fail. Full cumulative reward consumption and benefit lifecycle remain open."
+    },
+    {
+      "id": "S03-NUMERIC-DELIVERY",
+      "implementation": "internal/answer/neweducate/new_educate_drop.go",
+      "status": "PARTIAL_DELIVERY_DEPLOYED",
+      "scope": "Atomic numeric, owned polaroid, recovered immediate numeric talent, temporary-round count delivery; course/normal-site/favor/existing numeric goods call sites.",
+      "limits": "Choice, entry upgrade, tarot and pending/removal/complex benefits explicitly reject."
+    },
+    {
+      "id": "S03-SUMMARY",
+      "implementation": "internal/answer/neweducate/new_educate_handlers.go",
+      "status": "LIMITED_COURSE_SETTLEMENT_DEPLOYED_AND_LIVE_VERIFIED",
+      "scope": "Existing schedule count summary plus explicit per-course slot modifiers, capped actual deltas and persisted gain/spend ledger.",
+      "limits": "Live player had talent1002; slot talents1064-1069 tested using real-config protocol fixtures, not injected into the live save."
+    }
+  ],
+  "validation": {
+    "related_top_level_tests": "30 passed, 113.885s",
+    "final_or_tests": "passed, 13.438s",
+    "final_delivery_top_level_tests": "4 passed, 17.742s, no skips",
+    "all_packages_compiled": true,
+    "final_mixed_binary_built": true,
+    "binary_deployed": true,
+    "deployed_sha256": "D23143262B03725FCDB5B0E94C72A9BD4F3511624A70D2C8C8BB67E3378F9109",
+    "live_course_verified": true,
+    "one_reentry_verified": true,
+    "live_assessment_recovered": false,
+    "sql_player_fixture_injection": false,
+    "official_account_used": false
+  },
+  "evidence": "research/educate-recovery/20261010/s03-evidence.md",
+  "rules": "docs/s03-local-rules-20261010.md",
+  "remaining_contracts": "Full production benefit contexts/lifecycle and choice/entry/tarot delivery. No additional official-data collection is required before continuing local implementation."
+}

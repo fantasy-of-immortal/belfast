@@ -65,6 +65,15 @@ func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, dep
 	if depth > 64 {
 		return false, fmt.Errorf("condition nesting exceeds 64")
 	}
+	var symbol string
+	if json.Unmarshal(raw, &symbol) == nil {
+		if symbol != "${num}" || context == nil || !context.hasNumber || context.Number < 0 || context.Number > int64(^uint32(0)) {
+			return false, fmt.Errorf("invalid condition expression %s: numeric binding required", raw)
+		}
+		context.Multiplier = uint32(context.Number)
+		context.usesNumber = true
+		return context.Number > 0, nil
+	}
 	var id uint32
 	if json.Unmarshal(raw, &id) == nil {
 		config, ok, err := loadNewEducateConfigByID[educateConditionConfig](educateConditionCategory, id)
@@ -96,16 +105,35 @@ func evaluateEducateConditionDepth(state *educateState, raw json.RawMessage, dep
 		return false, fmt.Errorf("logical condition has no operands")
 	}
 	result := op == "&&"
+	var initial educateConditionContext
+	if context != nil {
+		initial = *context
+	}
+	var selected *educateConditionContext
 	for _, term := range terms {
-		value, err := evaluateEducateConditionDepth(state, term, depth+1, context)
+		operandContext := context
+		if op == "||" && context != nil {
+			copy := initial
+			operandContext = &copy
+		}
+		value, err := evaluateEducateConditionDepth(state, term, depth+1, operandContext)
 		if err != nil {
 			return false, err
 		}
 		if op == "&&" {
 			result = result && value
 		} else {
+			if value && context != nil {
+				if selected != nil && (selected.usesNumber || operandContext.usesNumber) && (selected.Multiplier != operandContext.Multiplier || selected.hasNumber != operandContext.hasNumber || (selected.hasNumber && selected.Number != operandContext.Number)) {
+					return false, fmt.Errorf("ambiguous numeric bindings in OR condition")
+				}
+				selected = operandContext
+			}
 			result = result || value
 		}
+	}
+	if selected != nil {
+		context.Number, context.Multiplier, context.hasNumber, context.usesNumber = selected.Number, selected.Multiplier, selected.hasNumber, selected.usesNumber
 	}
 	return result, nil
 }
@@ -206,6 +234,7 @@ func evaluateEducateConditionConfig(state *educateState, c *educateConditionConf
 	default:
 		return evaluateEducateContextCondition(state, c, context)
 	}
+	bindEducateConditionNumber(context, value)
 	return educateCompare(value, op, threshold)
 }
 

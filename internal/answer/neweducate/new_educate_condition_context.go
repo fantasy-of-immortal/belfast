@@ -19,6 +19,14 @@ type educateConditionContext struct {
 	SourceBuffID uint32
 	BuffRounds   map[uint32]educateConditionBuffRounds
 	Draw         func(uint64) (uint64, error)
+	Changes      map[string]educateNumericChange
+	RoundChanges map[string]educateNumericChange
+	HeldChanges  map[string]educateNumericChange
+	Number       int64
+	Multiplier   uint32
+	hasNumber    bool
+	usesNumber   bool
+	window       uint32
 	draws        map[string]uint32
 }
 
@@ -41,6 +49,8 @@ func evaluateEducateConditionWithContext(state *educateState, raw json.RawMessag
 		return evaluateEducateConditionDepth(state, raw, 0, nil)
 	}
 	candidate := *context
+	candidate.Number, candidate.Multiplier, candidate.hasNumber, candidate.window = 0, 1, false, 0
+	candidate.usesNumber = false
 	candidate.draws = make(map[string]uint32)
 	if state.Lifecycle != nil {
 		for key, value := range state.Lifecycle.ConditionDraws {
@@ -57,7 +67,14 @@ func evaluateEducateConditionWithContext(state *educateState, raw json.RawMessag
 		}
 		state.Lifecycle.ConditionDraws = candidate.draws
 	}
+	context.Number, context.Multiplier, context.hasNumber, context.usesNumber = candidate.Number, candidate.Multiplier, candidate.hasNumber, candidate.usesNumber
 	return matched, nil
+}
+
+func bindEducateConditionNumber(context *educateConditionContext, value int64) {
+	if context != nil {
+		context.Number, context.hasNumber = value, true
+	}
 }
 
 func evaluateEducateContextCondition(state *educateState, c *educateConditionConfig, context *educateConditionContext) (bool, error) {
@@ -77,9 +94,36 @@ func evaluateEducateContextCondition(state *educateState, c *educateConditionCon
 		if err := decode(2, &threshold); err != nil {
 			return false, err
 		}
+		bindEducateConditionNumber(context, count)
 		return educateCompare(count, op, threshold)
 	}
 	switch c.Type {
+	case 16:
+		var divisor int64
+		if len(p) != 1 {
+			return false, fmt.Errorf("numeric quotient requires one parameter")
+		}
+		if err := decode(0, &divisor); err != nil {
+			return false, err
+		}
+		if divisor <= 0 || context == nil || !context.hasNumber {
+			return false, fmt.Errorf("numeric quotient requires a positive divisor and preceding numeric operand")
+		}
+		// Personal-local contract: configuration is authoritative; positive
+		// units are rounded down. Description/config disagreements are recorded.
+		context.Number /= divisor
+		return context.Number > 0, nil
+	case 17:
+		return evaluateEducateChangeCondition(state, c, context)
+	case 18, 19:
+		if len(p) != 0 || context == nil {
+			return false, fmt.Errorf("change window requires action context and empty parameters")
+		}
+		context.window = c.Type
+		if (c.Type == 18 && context.RoundChanges == nil) || (c.Type == 19 && context.HeldChanges == nil) {
+			return false, fmt.Errorf("change window %d requires recorded counters", c.Type)
+		}
+		return true, nil
 	case 6:
 		var chance uint32
 		if len(p) != 1 {

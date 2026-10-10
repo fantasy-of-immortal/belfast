@@ -89,6 +89,9 @@ func applyEducateNumericBatch(state *educateState, rows [][]int32, multiplier ui
 		entry.Value = proto.Uint32(uint32(after))
 		actual = append(actual, &protobuf.TBDROP{Type: proto.Uint32(uint32(row[0])), Id: proto.Uint32(uint32(row[1])), Number: proto.Int32(int32(applied))})
 	}
+	if err := recordEducateNumericChanges(state, actual); err != nil {
+		return nil, err
+	}
 	state.Info.Res = candidate
 	return actual, nil
 }
@@ -105,7 +108,7 @@ func parseEducateDropTriplets(raw json.RawMessage, category, key, field string) 
 		return nil, fmt.Errorf("%s/%s/%s: missing triplets", category, key, field)
 	}
 	for i, row := range rows {
-		if len(row) != 3 || row[0] <= 0 || row[1] <= 0 {
+		if len(row) != 3 || row[0] <= 0 || row[1] < 0 || (row[1] == 0 && row[0] != 7 && row[0] != 6) {
 			return nil, fmt.Errorf("%s/%s/%s[%d]: invalid drop triplet", category, key, field, i)
 		}
 	}

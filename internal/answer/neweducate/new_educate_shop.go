@@ -51,7 +51,7 @@ func purchaseEducateNumericGood(state *educateState, id, quantity uint32) (*prot
 	if _, err := applyEducateNumericBatch(state, [][]int32{{2, int32(resourceID), int32(good.ResourceNum)}}, quantity, true); err != nil {
 		return nil, err
 	}
-	delivery, err := applyEducateNumericBatch(state, [][]int32{row}, quantity, false)
+	delivery, err := applyEducateDropBatch(state, [][]int32{row}, quantity, educateChangeContext(state, educateActionID(state, fmt.Sprintf("shop:%d", id)), 0, nil))
 	if err != nil {
 		return nil, err
 	}

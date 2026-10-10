@@ -17,18 +17,19 @@ type educateNodeStep struct {
 	Next     uint32 `json:"next"`
 }
 type educateNodeChain struct {
-	Version     int64              `json:"version"`
-	Source      string             `json:"source"`
-	ConfigID    uint32             `json:"config_id"`
-	Stage       uint32             `json:"stage"`
-	Entry       uint32             `json:"entry"`
-	Current     uint32             `json:"current"`
-	Completed   bool               `json:"completed"`
-	Steps       []educateNodeStep  `json:"steps,omitempty"`
-	ReplayStart int                `json:"replay_start,omitempty"`
-	Restarts    uint32             `json:"restarts,omitempty"`
-	RewardRows  [][]int32          `json:"reward_rows,omitempty"`
-	Rewards     []*protobuf.TBDROP `json:"rewards,omitempty"`
+	Version      int64              `json:"version"`
+	Source       string             `json:"source"`
+	ConfigID     uint32             `json:"config_id"`
+	Stage        uint32             `json:"stage"`
+	Entry        uint32             `json:"entry"`
+	Current      uint32             `json:"current"`
+	Completed    bool               `json:"completed"`
+	Steps        []educateNodeStep  `json:"steps,omitempty"`
+	ReplayStart  int                `json:"replay_start,omitempty"`
+	Restarts     uint32             `json:"restarts,omitempty"`
+	RewardRows   [][]int32          `json:"reward_rows,omitempty"`
+	Rewards      []*protobuf.TBDROP `json:"rewards,omitempty"`
+	StartRewards []*protobuf.TBDROP `json:"start_rewards,omitempty"`
 }
 type educateCharacterConfig struct {
 	ID               uint32              `json:"id"`

@@ -45,7 +45,7 @@ func claimEducateFavorLevel(state *educateState) (*protobuf.TBDROPS, error) {
 	if uint64(educateKVCount(state.Info.Res.Resource, id)) < threshold {
 		return nil, fmt.Errorf("favor experience below threshold %d", threshold)
 	}
-	delivery, err := applyEducateNumericBatch(state, [][]int32{config.Rewards[claimed]}, 1, false)
+	delivery, err := applyEducateDropBatch(state, [][]int32{config.Rewards[claimed]}, 1, educateChangeContext(state, educateActionID(state, "favor"), 0, nil))
 	if err != nil {
 		return nil, err
 	}
